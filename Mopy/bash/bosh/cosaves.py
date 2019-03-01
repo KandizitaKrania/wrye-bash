@@ -128,7 +128,7 @@ class _AChunk(object):
         :param plugin_chunk: the plugin_chunk this chunk belongs to
         """
 
-class _xSEChunk(_AChunk):
+class _xSEPluginChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
 
     def log_chunk(self, log, ins, save_masters, espmMap):
@@ -370,53 +370,56 @@ class _PluggyChunk(_AChunk):
         self.chunkLength = len(self.chunkData)
         plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
 
-class _PluginChunk(object):
-    """Info on a plugin in the save - composed of _AChunk units"""
+class _xSEChunk(object):
+    """A single xSE chunk, composed of _xSEPluginChunk (and potentially
+    _PluggyChunk) objects."""
+    _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
+    _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
     __slots__ = ('plugin_signature', 'num_plugin_chunks', 'plugin_data_size',
                  'plugin_chunks')
 
-    def __init__(self, ins, xse_signature, pluggy_signature):
+    def __init__(self, ins):
         self.plugin_signature = unpack_int(ins) # aka opcodeBase on pre papyrus
         self.num_plugin_chunks = unpack_int(ins)
         self.plugin_data_size = unpack_int(ins) # update it if you edit chunks
         self.plugin_chunks = []
-        chunk_type = self._get_plugin_chunk_type(xse_signature,
-                                                 pluggy_signature)
-        for x in xrange(self.num_plugin_chunks):
+        chunk_type = self._get_plugin_chunk_type(self._xse_signature,
+                                                 self._pluggy_signature)
+        for _ in xrange(self.num_plugin_chunks):
             self.plugin_chunks.append(chunk_type(ins))
 
     def _get_plugin_chunk_type(self, xse_signature, pluggy_signature):
-        if self.plugin_signature == xse_signature: return _xSEChunk
+        if self.plugin_signature == xse_signature: return _xSEPluginChunk
         if self.plugin_signature == pluggy_signature: return _PluggyChunk
         return _AChunk
 
 class ACoSaveFile(object):
     chunk_type = _AChunk
     header_type = _AHeader
-    __slots__ = ('cosave_path', 'cosave_header', 'plugin_chunks')
+    __slots__ = ('cosave_path', 'cosave_header', 'chunks')
 
     def __init__(self, cosave_path):
         self.cosave_path = cosave_path
         with cosave_path.open('rb') as ins:
             self.cosave_header = self.header_type(ins, cosave_path)
-            self.plugin_chunks = []
-            for _ in xrange(self.num_plugins):
-                self.plugin_chunks.append(self.chunk_type(ins))
+            self.chunks = self.load_chunks(ins)
 
-    @property
-    def num_plugins(self):
-        return 0
+    def load_chunks(self, ins):
+        pass
 
 class xSECoSave(ACoSaveFile):
     chunk_type = _xSEChunk
     header_type = _xSEHeader
+    __slots__ = ()
 
-    _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
-    _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
-    __slots__ = ('cosave_header', 'plugin_chunks')
+    def load_chunks(self, ins):
+        loaded_chunks = []
+        for _ in xrange(self.cosave_header.numPlugins):
+            loaded_chunks.append(self.chunk_type(ins))
+        return loaded_chunks
 
     def map_masters(self, master_renames_dict):
-        for plugin_chunk in self.plugin_chunks:
+        for plugin_chunk in self.chunks:
             for chunk in plugin_chunk.plugin_chunks: # TODO avoid scanning all chunks
                 chunk.chunk_map_master(master_renames_dict, plugin_chunk)
 
@@ -431,7 +434,7 @@ class xSECoSave(ACoSaveFile):
             self.cosave_header.obseMinorVersion,))
         log(_(u'  Game version:     %08X') % (self.cosave_header.oblivionVersion,))
         #--Plugins
-        for plugin_ch in self.plugin_chunks: # type: _PluginChunk
+        for plugin_ch in self.chunks: # type: _xSEChunk
             plugin_sig = plugin_ch.plugin_signature
             log.setHeader(_(u'Plugin opcode=%08X chunkNum=%u') % (
                 plugin_sig, plugin_ch.num_plugin_chunks,))
@@ -455,8 +458,8 @@ class xSECoSave(ACoSaveFile):
         with sio() as buff:
             self.cosave_header.write_header(buff)
             #--Plugins
-            _pack(buff,'=I', len(self.plugin_chunks))
-            for plugin_ch in self.plugin_chunks: # type: _PluginChunk
+            _pack(buff,'=I', len(self.chunks))
+            for plugin_ch in self.chunks: # type: _xSEChunk
                 _pack(buff, '=I', plugin_ch.plugin_signature)
                 _pack(buff, '=I', plugin_ch.num_plugin_chunks)
                 _pack(buff, '=I', plugin_ch.plugin_data_size)
@@ -475,38 +478,28 @@ class xSECoSave(ACoSaveFile):
         self.write_cosave(self.cosave_path.temp)
         self.cosave_path.untemp()
 
-class ObseCosave(xSECoSave):
-    # TODO Keep in mind that OBSE saves can contain pluggy chunks (with
-    # signature 0x2330, as shown here)
-    _pluggy_signature = 0x2330
-
-class SkseCosave(xSECoSave):
-    _xse_signature = 0x0
-
 # Factory
 def get_cosave_type(game_fsName):
     """:rtype: type"""
     if game_fsName == u'Oblivion':
         _xSEHeader.savefile_tag = 'OBSE'
-        return ObseCosave
+        _xSEChunk._pluggy_signature = 0x2330
     elif game_fsName == u'Skyrim':
         _xSEHeader.savefile_tag = 'SKSE'
-        return SkseCosave
+        _xSEChunk._xse_signature = 0x0
     elif game_fsName == u'Skyrim Special Edition':
         _xSEHeader.savefile_tag = 'SKSE'
-        _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
-        return SkseCosave
+        _xSEChunk._xse_signature = 0x0
+        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout4':
         _xSEHeader.savefile_tag = 'F4SE'
-        _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
-        return SkseCosave
+        _xSEChunk._xse_signature = 0x0
+        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout3':
         _xSEHeader.savefile_tag = 'FOSE'
-        return xSECoSave
     elif game_fsName == u'FalloutNV':
         _xSEHeader.savefile_tag = 'NVSE'
-        return xSECoSave
-    return None
+    return xSECoSave
 
 #------------------------------------------------------------------------------
 class PluggyFile(ACoSaveFile):
