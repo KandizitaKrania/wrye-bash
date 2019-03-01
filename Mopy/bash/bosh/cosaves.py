@@ -220,8 +220,7 @@ class _xSEPluginChunk(_AChunk):
         self.chunkLength = len(self.chunkData)
         plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
 
-class _PluggyChunk(_AChunk):
-
+class _xSEPluggyChunk(_xSEPluginChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
         chunkVersion = self.chunkVersion
         chunkBuff = self.chunkData
@@ -371,6 +370,9 @@ class _PluggyChunk(_AChunk):
         self.chunkLength = len(self.chunkData)
         plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
 
+class _PluggyChunk(_AChunk):
+    pass
+
 class _xSEChunk(object):
     """A single xSE chunk, composed of _xSEPluginChunk (and potentially
     _PluggyChunk) objects."""
@@ -391,7 +393,7 @@ class _xSEChunk(object):
 
     def _get_plugin_chunk_type(self, xse_signature, pluggy_signature):
         if self.plugin_signature == xse_signature: return _xSEPluginChunk
-        if self.plugin_signature == pluggy_signature: return _PluggyChunk
+        if self.plugin_signature == pluggy_signature: return _xSEPluggyChunk
         return _AChunk
 
 class ACoSaveFile(object):
@@ -444,7 +446,7 @@ class xSECoSave(ACoSaveFile):
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 80)
             espMap = {}
-            for ch in plugin_ch.plugin_chunks: # type: _AChunk
+            for ch in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
                 chunkTypeNum, = struct_unpack('=I',ch.chunkType)
                 if ch.chunkType[0] >= ' ' and ch.chunkType[3] >= ' ': # HUH ?
                     log(u'  %4s  %-4u  %08X' % (
@@ -465,7 +467,7 @@ class xSECoSave(ACoSaveFile):
                 _pack(buff, '=I', plugin_ch.plugin_signature)
                 _pack(buff, '=I', plugin_ch.num_plugin_chunks)
                 _pack(buff, '=I', plugin_ch.plugin_data_size)
-                for chunk in plugin_ch.plugin_chunks: # type: _AChunk
+                for chunk in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
                     buff.write(chunk.chunkType)
                     _pack(buff, '=2I', chunk.chunkVersion, chunk.chunkLength)
                     buff.write(chunk.chunkData)
