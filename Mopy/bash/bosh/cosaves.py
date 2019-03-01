@@ -68,24 +68,24 @@ class _AHeader(object):
 
 class _xSEHeader(_AHeader):
     """Header for xSE cosaves."""
-    __slots__ = ('formatVersion', 'obseVersion', 'obseMinorVersion',
-                 'oblivionVersion', 'numPlugins')
+    __slots__ = ('format_version', 'se_version', 'se_minor_version',
+                 'game_version', 'num_plugins')
 
-    # numPlugins: the xSE plugins the cosave knows about - including xSE itself
+    # num_plugins: the xSE plugins the cosave knows about - including xSE itself
     def __init__(self, ins, cosave_path):
         super(_xSEHeader, self).__init__(ins, cosave_path)
-        self.formatVersion = unpack_int(ins)
-        self.obseVersion = unpack_short(ins)
-        self.obseMinorVersion = unpack_short(ins)
-        self.oblivionVersion = unpack_int(ins)
-        self.numPlugins = unpack_int(ins)
+        self.format_version = unpack_int(ins)
+        self.se_version = unpack_short(ins)
+        self.se_minor_version = unpack_short(ins)
+        self.game_version = unpack_int(ins)
+        self.num_plugins = unpack_int(ins)
 
     def write_header(self, out):
         super(_xSEHeader, self).write_header(out)
-        _pack(out, '=I', self.formatVersion)
-        _pack(out, '=H', self.obseVersion)
-        _pack(out, '=H', self.obseMinorVersion)
-        _pack(out, '=I', self.oblivionVersion)
+        _pack(out, '=I', self.format_version)
+        _pack(out, '=H', self.se_version)
+        _pack(out, '=H', self.se_minor_version)
+        _pack(out, '=I', self.game_version)
 
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
@@ -414,7 +414,7 @@ class xSECoSave(ACoSaveFile):
 
     def load_chunks(self, ins):
         loaded_chunks = []
-        for _ in xrange(self.cosave_header.numPlugins):
+        for _ in xrange(self.cosave_header.num_plugins):
             loaded_chunks.append(self.chunk_type(ins))
         return loaded_chunks
 
@@ -426,13 +426,14 @@ class xSECoSave(ACoSaveFile):
     def logStatObse(self, log, save_masters):
         """Print stats to log."""
         #--Header
+        my_header = self.cosave_header # type: _xSEHeader
         log.setHeader(_(u'Header'))
         log(u'=' * 80)
-        log(_(u'  Format version:   %08X') % (self.cosave_header.formatVersion,))
+        log(_(u'  Format version:   %08X') % (my_header.format_version,))
         log(_(u'  %s version:      %u.%u') % (
-            self.cosave_header.savefile_tag, self.cosave_header.obseVersion,
-            self.cosave_header.obseMinorVersion,))
-        log(_(u'  Game version:     %08X') % (self.cosave_header.oblivionVersion,))
+            my_header.savefile_tag, my_header.se_version,
+            my_header.se_minor_version,))
+        log(_(u'  Game version:     %08X') % (my_header.game_version,))
         #--Plugins
         for plugin_ch in self.chunks: # type: _xSEChunk
             plugin_sig = plugin_ch.plugin_signature
