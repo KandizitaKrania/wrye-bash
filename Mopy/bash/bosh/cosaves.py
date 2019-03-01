@@ -50,7 +50,6 @@ class _AHeader(object):
         :param ins: The input stream to read from.
         :param cosave_path: The path to the cosave.
         """
-        # TODO Don't we have to use self.__class__.savefile_tag?
         actual_tag = unpack_string(ins, len(self.savefile_tag))
         if actual_tag != self.savefile_tag:
             raise FileError(cosave_path, u'Header tag wrong: got %r, but '
@@ -90,19 +89,20 @@ class _xSEHeader(_AHeader):
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
     savefile_tag = 'PluggySave'
+    _max_supported_version = 0x0105000
     __slots__ = ()
 
     def __init__(self, ins, cosave_path):
         super(_PluggyHeader, self).__init__(ins, cosave_path)
         version = unpack_int(ins)
-        if version > 0x0105000:
+        if version > self._max_supported_version:
             raise FileError(cosave_path, u'Version of pluggy save file format '
                                          u'is too new - only versions up to '
                                          u'1.6.0000 are supported.')
 
     def write_header(self, out):
         super(_PluggyHeader, self).write_header(out)
-        _pack(out, '=I', 0x0105000)
+        _pack(out, '=I', self._max_supported_version)
 
 class _AChunk(object):
     _esm_encoding = 'cp1252' # TODO ask!
@@ -373,7 +373,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
 class _PluggyChunk(_AChunk):
     pass
 
-class _xSEChunk(object):
+class _xSEChunk(_AChunk):
     """A single xSE chunk, composed of _xSEPluginChunk (and potentially
     _PluggyChunk) objects."""
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
