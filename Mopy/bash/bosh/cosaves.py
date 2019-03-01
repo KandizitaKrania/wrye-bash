@@ -105,14 +105,8 @@ class _PluggyHeader(_AHeader):
         _pack(out, '=I', 0x0105000)
 
 class _AChunk(object):
-    __slots__ = ('chunkType', 'chunkVersion', 'chunkLength', 'chunkData')
     _esm_encoding = 'cp1252' # TODO ask!
-
-    def __init__(self, ins):
-        self.chunkType = unpack_4s(ins)
-        self.chunkVersion = unpack_int(ins)
-        self.chunkLength = unpack_int(ins) # the length of the chunk data block
-        self.chunkData = ins.read(self.chunkLength)
+    __slots__ = ()
 
     def log_chunk(self, log, ins, save_masters, espmMap):
         """
@@ -130,6 +124,13 @@ class _AChunk(object):
 
 class _xSEPluginChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
+    __slots__ = ('chunkType', 'chunkVersion', 'chunkLength', 'chunkData')
+
+    def __init__(self, ins):
+        self.chunkType = unpack_4s(ins)
+        self.chunkVersion = unpack_int(ins)
+        self.chunkLength = unpack_int(ins) # the length of the chunk data block
+        self.chunkData = ins.read(self.chunkLength)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
         chunkType = self.chunkType
