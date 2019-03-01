@@ -134,7 +134,7 @@ class _AChunk(object):
         :param plugin_chunk: the plugin_chunk this chunk belongs to
         """
 
-class _xSEPluginChunk(_AChunk):
+class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     __slots__ = ('chunk_type', 'chunk_version', 'chunk_length')
 
@@ -168,36 +168,13 @@ class _xSEPluginChunk(_AChunk):
         self.chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
-class _xSEPluginChunkRVTS(_xSEPluginChunk):
-    __slots__ = ('mod_index', 'string_id', 'string_data')
-
-    def __init__(self, ins):
-        super(_xSEPluginChunkRVTS, self).__init__(ins)
-        self.mod_index = unpack_byte(ins)
-        self.string_id = unpack_int(ins)
-        string_len = unpack_short(ins)
-        self.string_data = ins.read(string_len)
-
-    def write_chunk(self, out):
-        super(_xSEPluginChunkRVTS, self).write_chunk(out)
-        _pack(out, '=B', self.mod_index)
-        _pack(out, '=I', self.string_id)
-        _pack(out, '=H', len(self.string_data))
-        out.write(self.string_data)
-
-    def log_chunk(self, log, ins, save_masters, espmMap):
-        log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
-            self.mod_index, save_masters[self.mod_index].s))
-        log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
-        log(u'    ' + _(u'Data:') + u'  %s' % self.string_data)
-
-class _xSEPluginChunkRVRA(_xSEPluginChunk):
+class _xSEChunkRVRA(_xSEChunk):
     __slots__ = ('modIndex', 'arrayID', 'keyType', 'isPacked', 'references',
                  'elements')
 
     # Warning: Very complex definition coming up
     def __init__(self, ins):
-        super(_xSEPluginChunkRVRA, self).__init__(ins)
+        super(_xSEChunkRVRA, self).__init__(ins)
         self.modIndex = unpack_byte(ins)
         self.arrayID = unpack_int(ins)
         self.keyType = unpack_byte(ins)
@@ -233,7 +210,7 @@ class _xSEPluginChunkRVRA(_xSEPluginChunk):
             self.elements.append((key, dataType, stored_data))
 
     def write_chunk(self, out):
-        super(_xSEPluginChunkRVRA, self).write_chunk(out)
+        super(_xSEChunkRVRA, self).write_chunk(out)
         _pack(out, '=B', self.modIndex)
         _pack(out, '=I', self.arrayID)
         _pack(out, '=B', self.keyType)
@@ -311,7 +288,30 @@ class _xSEPluginChunkRVRA(_xSEPluginChunk):
             log(u'    [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEPluggyChunk(_xSEPluginChunk):
+class _xSEChunkRVTS(_xSEChunk):
+    __slots__ = ('mod_index', 'string_id', 'string_data')
+
+    def __init__(self, ins):
+        super(_xSEChunkRVTS, self).__init__(ins)
+        self.mod_index = unpack_byte(ins)
+        self.string_id = unpack_int(ins)
+        string_len = unpack_short(ins)
+        self.string_data = ins.read(string_len)
+
+    def write_chunk(self, out):
+        super(_xSEChunkRVTS, self).write_chunk(out)
+        _pack(out, '=B', self.mod_index)
+        _pack(out, '=I', self.string_id)
+        _pack(out, '=H', len(self.string_data))
+        out.write(self.string_data)
+
+    def log_chunk(self, log, ins, save_masters, espmMap):
+        log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
+            self.mod_index, save_masters[self.mod_index].s))
+        log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
+        log(u'    ' + _(u'Data:') + u'  %s' % self.string_data)
+
+class _xSEPluggyChunk(_xSEChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
         chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum == 1:
@@ -459,9 +459,9 @@ class _xSEPluggyChunk(_xSEPluginChunk):
         self.chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
-class _xSEChunk(_AChunk):
-    """A single xSE chunk, composed of _xSEPluginChunk (and potentially
-    _PluggyChunk) objects."""
+class _xSEPluginChunk(_AChunk):
+    """A single xSE chunk, composed of _xSEChunk (and potentially _PluggyChunk)
+    objects."""
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
     __slots__ = ('plugin_signature', 'num_plugin_chunks', 'plugin_data_size',
@@ -472,14 +472,21 @@ class _xSEChunk(_AChunk):
         self.num_plugin_chunks = unpack_int(ins)
         self.plugin_data_size = unpack_int(ins) # update it if you edit chunks
         self.plugin_chunks = []
-        chunk_type = self._get_plugin_chunk_type(self._xse_signature,
+        chunk_type = self._get_plugin_chunk_type(ins, self._xse_signature,
                                                  self._pluggy_signature)
         for _ in xrange(self.num_plugin_chunks):
             self.plugin_chunks.append(chunk_type(ins))
 
-    def _get_plugin_chunk_type(self, xse_signature, pluggy_signature):
-        if self.plugin_signature == xse_signature: return _xSEPluginChunk
-        if self.plugin_signature == pluggy_signature: return _xSEPluggyChunk
+    def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
+        if self.plugin_signature == pluggy_signature:
+            return _xSEPluggyChunk
+        elif self.plugin_signature == xse_signature:
+            chunk_type = unpack_4s(ins)
+            if chunk_type == 'RVRA':
+                return _xSEChunkRVRA
+            elif chunk_type == 'RVTS':
+                return _xSEChunkRVTS
+            return _xSEChunk
         return _AChunk
 
 class _PluggyChunk(_AChunk):
@@ -506,7 +513,7 @@ class ACoSaveFile(object):
         pass
 
 class xSECoSave(ACoSaveFile):
-    chunk_type = _xSEChunk
+    chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
     __slots__ = ()
 
@@ -533,7 +540,7 @@ class xSECoSave(ACoSaveFile):
             my_header.se_minor_version,))
         log(_(u'  Game version:     %08X') % (my_header.game_version,))
         #--Plugins
-        for plugin_ch in self.chunks: # type: _xSEChunk
+        for plugin_ch in self.chunks: # type: _xSEPluginChunk
             plugin_sig = plugin_ch.plugin_signature
             log.setHeader(_(u'Plugin opcode=%08X chunkNum=%u') % (
                 plugin_sig, plugin_ch.num_plugin_chunks,))
@@ -541,7 +548,7 @@ class xSECoSave(ACoSaveFile):
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 80)
             espMap = {}
-            for ch in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
+            for ch in plugin_ch.plugin_chunks: # type: _xSEChunk
                 chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
                 if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
                     log(u'  %4s  %-4u  %08X' % (
@@ -560,11 +567,11 @@ class xSECoSave(ACoSaveFile):
             my_header.num_plugins = len(self.chunks)
             my_header.write_header(buff)
             #--Plugins
-            for plugin_ch in self.chunks: # type: _xSEChunk
+            for plugin_ch in self.chunks: # type: _xSEPluginChunk
                 _pack(buff, '=I', plugin_ch.plugin_signature)
                 _pack(buff, '=I', plugin_ch.num_plugin_chunks)
                 _pack(buff, '=I', plugin_ch.plugin_data_size)
-                for chunk in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
+                for chunk in plugin_ch.plugin_chunks: # type: _xSEChunk
                     buff.write(chunk.chunk_type)
                     _pack(buff, '=2I', chunk.chunk_version, chunk.chunk_length)
                     buff.write(chunk.chunk_data)
@@ -676,18 +683,18 @@ def get_cosave_type(game_fsName):
     """:rtype: type"""
     if game_fsName == u'Oblivion':
         _xSEHeader.savefile_tag = 'OBSE'
-        _xSEChunk._pluggy_signature = 0x2330
+        _xSEPluginChunk._pluggy_signature = 0x2330
     elif game_fsName == u'Skyrim':
         _xSEHeader.savefile_tag = 'SKSE'
-        _xSEChunk._xse_signature = 0x0
+        _xSEPluginChunk._xse_signature = 0x0
     elif game_fsName == u'Skyrim Special Edition':
         _xSEHeader.savefile_tag = 'SKSE'
-        _xSEChunk._xse_signature = 0x0
-        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
+        _xSEPluginChunk._xse_signature = 0x0
+        _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout4':
         _xSEHeader.savefile_tag = 'F4SE'
-        _xSEChunk._xse_signature = 0x0
-        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
+        _xSEPluginChunk._xse_signature = 0x0
+        _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout3':
         _xSEHeader.savefile_tag = 'FOSE'
     elif game_fsName == u'FalloutNV':
