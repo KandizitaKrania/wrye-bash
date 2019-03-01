@@ -113,6 +113,13 @@ class _AChunk(object):
     _esm_encoding = 'cp1252' # TODO ask!
     __slots__ = ()
 
+    def write_chunk(self, out):
+        """
+        Writes this chunk to the specified output stream.
+
+        :param out: The output stream to write to.
+        """
+
     def log_chunk(self, log, ins, save_masters, espmMap):
         """
         :param save_masters: the espm masters of the save, used in xSE chunks
@@ -129,13 +136,17 @@ class _AChunk(object):
 
 class _xSEPluginChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
-    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
+    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length')
 
     def __init__(self, ins):
         self.chunk_type = unpack_4s(ins)
         self.chunk_version = unpack_int(ins)
         self.chunk_length = unpack_int(ins) # length of the chunk data block
-        self.chunk_data = ins.read(self.chunk_length)
+
+    def write_chunk(self, out):
+        _pack(out, '=4s', self.chunk_type)
+        _pack(out, '=I', self.chunk_version)
+        _pack(out, '=I', self.chunk_length)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
         if self.chunk_type == 'RVTS':
@@ -206,6 +217,7 @@ class _xSEPluginChunk(_AChunk):
                                            dataStr))
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
+        # TODO Will need rewriting now that chunk_data is gone
         if self.chunk_type not in self._espm_chunk_type:
             return
         with sio(self.chunk_data) as ins:
@@ -396,7 +408,11 @@ class _xSEChunk(_AChunk):
         return _AChunk
 
 class _PluggyChunk(_AChunk):
-    pass
+    """A single pluggy chunk, of the type that occurs in .pluggy files."""
+    __slots__ = ('record_type',)
+
+    def __init__(self, ins):
+        self.record_type = unpack_byte(ins)
 
 #------------------------------------------------------------------------------
 # Files
