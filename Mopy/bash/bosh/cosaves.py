@@ -175,17 +175,17 @@ class _xSEChunk(_AChunk):
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEChunkARVR(_xSEChunk):
-    __slots__ = ('modIndex', 'arrayID', 'keyType', 'isPacked', 'references',
-                 'elements')
     _fully_decoded = True
+    __slots__ = ('mod_index', 'array_id', 'key_type', 'is_packed',
+                 'references', 'elements')
 
     # Warning: Very complex definition coming up
     def __init__(self, ins):
         super(_xSEChunkARVR, self).__init__(ins)
-        self.modIndex = unpack_byte(ins)
-        self.arrayID = unpack_int(ins)
-        self.keyType = unpack_byte(ins)
-        self.isPacked = unpack_byte(ins)
+        self.mod_index = unpack_byte(ins)
+        self.array_id = unpack_int(ins)
+        self.key_type = unpack_byte(ins)
+        self.is_packed = unpack_byte(ins)
         if self.chunk_version >= 1:
             num_references = unpack_int(ins)
             self.references = []
@@ -194,75 +194,75 @@ class _xSEChunkARVR(_xSEChunk):
         num_elements = unpack_int(ins)
         self.elements = []
         for x in xrange(num_elements):
-            if self.keyType == 1:
+            if self.key_type == 1:
                 key, = _unpack(ins, '=d', 8)
-            elif self.keyType == 3:
+            elif self.key_type == 3:
                 key = ins.read(unpack_short(ins))
             else:
                 raise RuntimeError(u'Unknown or unsupported key type %u.' %
-                                   self.keyType)
-            dataType = unpack_byte(ins)
-            if dataType == 1:
+                                   self.key_type)
+            element_type = unpack_byte(ins)
+            if element_type == 1:
                 stored_data, = _unpack(ins, '=d', 8)
-            elif dataType == 2:
+            elif element_type == 2:
                 stored_data = unpack_int(ins)
-            elif dataType == 3:
+            elif element_type == 3:
                 data_len = unpack_short(ins)
                 stored_data = ins.read(data_len)
-            elif dataType == 4:
+            elif element_type == 4:
                 stored_data = unpack_int(ins)
             else:
-                raise RuntimeError(u'Unknown or unsupported data type %u.' %
-                                   dataType)
-            self.elements.append((key, dataType, stored_data))
+                raise RuntimeError(u'Unknown or unsupported element type %u.' %
+                                   element_type)
+            self.elements.append((key, element_type, stored_data))
 
     def write_chunk(self, out):
         super(_xSEChunkARVR, self).write_chunk(out)
-        _pack(out, '=B', self.modIndex)
-        _pack(out, '=I', self.arrayID)
-        _pack(out, '=B', self.keyType)
-        _pack(out, '=B', self.isPacked)
+        _pack(out, '=B', self.mod_index)
+        _pack(out, '=I', self.array_id)
+        _pack(out, '=B', self.key_type)
+        _pack(out, '=B', self.is_packed)
         if self.chunk_version >= 1:
             _pack(out, '=I', len(self.references))
             for reference in self.references:
                 _pack(out, '=B', reference)
         _pack(out, '=I', len(self.elements))
         for element in self.elements:
-            key, dataType, stored_data = element[0], element[1], element[2]
-            if self.keyType == 1:
+            key, element_type, stored_data = element[0], element[1], element[2]
+            if self.key_type == 1:
                 _pack(out, '=d', key)
-            elif self.keyType == 3:
+            elif self.key_type == 3:
                 _pack(out, '=H', key)
             else:
                 raise RuntimeError(u'Unknown or unsupported key type %u.' %
-                                   self.keyType)
-            _pack(out, '=B', dataType)
-            if dataType == 1:
+                                   self.key_type)
+            _pack(out, '=B', element_type)
+            if element_type == 1:
                 _pack(out, '=d', stored_data)
-            elif dataType == 2:
+            elif element_type == 2:
                 _pack(out, '=I', stored_data)
-            elif dataType == 3:
+            elif element_type == 3:
                 _pack(out, '=H', len(stored_data))
                 out.write(stored_data)
-            elif dataType == 4:
+            elif element_type == 4:
                 _pack(out, '=I', stored_data)
             else:
-                raise RuntimeError(u'Unknown or unsupported data type %u.' %
-                                   dataType)
+                raise RuntimeError(u'Unknown or unsupported element type %u.' %
+                                   element_type)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
-        if self.modIndex == 255:
-            log(_(u'    Mod :  %02X (Save File)') % self.modIndex)
+        if self.mod_index == 255:
+            log(_(u'    Mod :  %02X (Save File)') % self.mod_index)
         else:
             log(_(u'    Mod :  %02X (%s)') % (
-                self.modIndex, save_masters[self.modIndex].s))
-        log(_(u'    ID  :  %u') % self.arrayID)
-        if self.keyType == 1: #Numeric
-            if self.isPacked:
+                self.mod_index, save_masters[self.mod_index].s))
+        log(_(u'    ID  :  %u') % self.array_id)
+        if self.key_type == 1: #Numeric
+            if self.is_packed:
                 log(_(u'    Type:  Array'))
             else:
                 log(_(u'    Type:  Map'))
-        elif self.keyType == 3:
+        elif self.key_type == 3:
             log(_(u'    Type:  StringMap'))
         else:
             log(_(u'    Type:  Unknown'))
@@ -277,9 +277,9 @@ class _xSEChunkARVR(_xSEChunk):
         log(_(u'    Size:  %u') % len(self.elements))
         for element in self.elements:
             key, dataType, stored_data = element[0], element[1], element[2]
-            if self.keyType == 1:
+            if self.key_type == 1:
                 keyStr = u'%f' % key
-            elif self.keyType == 3:
+            elif self.key_type == 3:
                 keyStr = decode(key)
             else:
                 keyStr = u'BAD'
