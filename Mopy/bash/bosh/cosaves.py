@@ -149,15 +149,7 @@ class _xSEPluginChunk(_AChunk):
         _pack(out, '=I', self.chunk_length)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
-        if self.chunk_type == 'RVTS':
-            #--OBSE String
-            modIndex, stringID, stringLength, = _unpack(ins, '=BIH', 7)
-            stringData = decode(ins.read(stringLength))
-            log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
-                modIndex, save_masters[modIndex].s))
-            log(u'    ' + _(u'ID  :') + u'  %u' % stringID)
-            log(u'    ' + _(u'Data:') + u'  %s' % stringData)
-        elif self.chunk_type == 'RVRA':
+        if self.chunk_type == 'RVRA':
             #--OBSE Array
             modIndex, arrayID, keyType, isPacked, = _unpack(ins, '=BIBB', 7)
             if modIndex == 255:
@@ -235,6 +227,29 @@ class _xSEPluginChunk(_AChunk):
         old_chunk_length = self.chunk_length
         self.chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
+
+class _xSEPluginChunkRVTS(_xSEPluginChunk):
+    __slots__ = ('modIndex', 'stringID', 'stringLength', 'stringData')
+
+    def __init__(self, ins):
+        super(_xSEPluginChunkRVTS, self).__init__(ins)
+        self.modIndex = unpack_byte(ins)
+        self.stringID = unpack_int(ins)
+        self.stringLength = unpack_short(ins)
+        self.stringData = ins.read(self.stringLength)
+
+    def write_chunk(self, out):
+        super(_xSEPluginChunkRVTS, self).write_chunk(out)
+        _pack(out, '=B', self.modIndex)
+        _pack(out, '=I', self.stringID)
+        _pack(out, '=H', self.stringLength)
+        out.write(self.stringData)
+
+    def log_chunk(self, log, ins, save_masters, espmMap):
+        log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
+            self.modIndex, save_masters[self.modIndex].s))
+        log(u'    ' + _(u'ID  :') + u'  %u' % self.stringID)
+        log(u'    ' + _(u'Data:') + u'  %s' % self.stringData)
 
 class _xSEPluggyChunk(_xSEPluginChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
