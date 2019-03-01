@@ -174,14 +174,14 @@ class _xSEChunk(_AChunk):
         self.chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
-class _xSEChunkRVRA(_xSEChunk):
+class _xSEChunkARVR(_xSEChunk):
     __slots__ = ('modIndex', 'arrayID', 'keyType', 'isPacked', 'references',
                  'elements')
     _fully_decoded = True
 
     # Warning: Very complex definition coming up
     def __init__(self, ins):
-        super(_xSEChunkRVRA, self).__init__(ins)
+        super(_xSEChunkARVR, self).__init__(ins)
         self.modIndex = unpack_byte(ins)
         self.arrayID = unpack_int(ins)
         self.keyType = unpack_byte(ins)
@@ -217,7 +217,7 @@ class _xSEChunkRVRA(_xSEChunk):
             self.elements.append((key, dataType, stored_data))
 
     def write_chunk(self, out):
-        super(_xSEChunkRVRA, self).write_chunk(out)
+        super(_xSEChunkARVR, self).write_chunk(out)
         _pack(out, '=B', self.modIndex)
         _pack(out, '=I', self.arrayID)
         _pack(out, '=B', self.keyType)
@@ -295,19 +295,19 @@ class _xSEChunkRVRA(_xSEChunk):
             log(u'    [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEChunkRVTS(_xSEChunk):
+class _xSEChunkSTVR(_xSEChunk):
     _fully_decoded = True
     __slots__ = ('mod_index', 'string_id', 'string_data')
 
     def __init__(self, ins):
-        super(_xSEChunkRVTS, self).__init__(ins)
+        super(_xSEChunkSTVR, self).__init__(ins)
         self.mod_index = unpack_byte(ins)
         self.string_id = unpack_int(ins)
         string_len = unpack_short(ins)
         self.string_data = ins.read(string_len)
 
     def write_chunk(self, out):
-        super(_xSEChunkRVTS, self).write_chunk(out)
+        super(_xSEChunkSTVR, self).write_chunk(out)
         _pack(out, '=B', self.mod_index)
         _pack(out, '=I', self.string_id)
         _pack(out, '=H', len(self.string_data))
@@ -489,11 +489,12 @@ class _xSEPluginChunk(_AChunk):
         if self.plugin_signature == pluggy_signature:
             return _xSEPluggyChunk
         elif self.plugin_signature == xse_signature:
-            chunk_type = unpack_4s(ins)
-            if chunk_type == 'RVRA':
-                return _xSEChunkRVRA
-            elif chunk_type == 'RVTS':
-                return _xSEChunkRVTS
+            # The chunk type strings are reversed in the cosaves
+            chunk_type = unpack_4s(ins)[::-1]
+            if chunk_type == 'ARVR':
+                return _xSEChunkARVR
+            elif chunk_type == 'STVR':
+                return _xSEChunkSTVR
             return _xSEChunk
         return _AChunk
 
