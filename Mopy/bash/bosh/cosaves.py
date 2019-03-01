@@ -136,17 +136,23 @@ class _AChunk(object):
 
 class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
-    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length')
+    _fully_decoded = False
+    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
 
     def __init__(self, ins):
         self.chunk_type = unpack_4s(ins)
         self.chunk_version = unpack_int(ins)
-        self.chunk_length = unpack_int(ins) # length of the chunk data block
+        self.chunk_length = unpack_int(ins)
+        if not self._fully_decoded: # if we haven't fully decoded this record,
+                                    # treat it as a binary blob
+            self.chunk_data = ins.read(self.chunk_length)
 
     def write_chunk(self, out):
         _pack(out, '=4s', self.chunk_type)
         _pack(out, '=I', self.chunk_version)
         _pack(out, '=I', self.chunk_length)
+        if not self._fully_decoded:
+            out.write(self.chunk_data)
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
         # TODO Will need rewriting now that chunk_data is gone
@@ -171,6 +177,7 @@ class _xSEChunk(_AChunk):
 class _xSEChunkRVRA(_xSEChunk):
     __slots__ = ('modIndex', 'arrayID', 'keyType', 'isPacked', 'references',
                  'elements')
+    _fully_decoded = True
 
     # Warning: Very complex definition coming up
     def __init__(self, ins):
@@ -289,6 +296,7 @@ class _xSEChunkRVRA(_xSEChunk):
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
 class _xSEChunkRVTS(_xSEChunk):
+    _fully_decoded = True
     __slots__ = ('mod_index', 'string_id', 'string_data')
 
     def __init__(self, ins):
@@ -474,7 +482,7 @@ class _xSEPluginChunk(_AChunk):
         self.plugin_chunks = []
         chunk_type = self._get_plugin_chunk_type(ins, self._xse_signature,
                                                  self._pluggy_signature)
-        for _ in xrange(self.num_plugin_chunks):
+        for x in xrange(self.num_plugin_chunks):
             self.plugin_chunks.append(chunk_type(ins))
 
     def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
@@ -519,7 +527,7 @@ class xSECoSave(ACoSaveFile):
 
     def load_chunks(self, ins):
         loaded_chunks = []
-        for _ in xrange(self.cosave_header.num_plugins):
+        for x in xrange(self.cosave_header.num_plugins):
             loaded_chunks.append(self.chunk_type(ins))
         return loaded_chunks
 
