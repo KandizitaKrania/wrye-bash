@@ -37,6 +37,8 @@ def _pack(buff, fmt, *args): buff.write(struct_pack(fmt, *args))
 # TODO(inf) Replace with unpack_many
 def _unpack(ins, fmt, size): return struct_unpack(fmt, ins.read(size))
 
+#------------------------------------------------------------------------------
+# Headers
 class _AHeader(object):
     """Abstract base class for cosave headers."""
     savefile_tag = 'OVERRIDE'
@@ -104,6 +106,8 @@ class _PluggyHeader(_AHeader):
         super(_PluggyHeader, self).write_header(out)
         _pack(out, '=I', self._max_supported_version)
 
+#------------------------------------------------------------------------------
+# Chunks
 class _AChunk(object):
     _esm_encoding = 'cp1252' # TODO ask!
     __slots__ = ()
@@ -370,9 +374,6 @@ class _xSEPluggyChunk(_xSEPluginChunk):
         self.chunkLength = len(self.chunkData)
         plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
 
-class _PluggyChunk(_AChunk):
-    pass
-
 class _xSEChunk(_AChunk):
     """A single xSE chunk, composed of _xSEPluginChunk (and potentially
     _PluggyChunk) objects."""
@@ -396,6 +397,11 @@ class _xSEChunk(_AChunk):
         if self.plugin_signature == pluggy_signature: return _xSEPluggyChunk
         return _AChunk
 
+class _PluggyChunk(_AChunk):
+    pass
+
+#------------------------------------------------------------------------------
+# Files
 class ACoSaveFile(object):
     chunk_type = _AChunk
     header_type = _AHeader
@@ -482,30 +488,6 @@ class xSECoSave(ACoSaveFile):
         self.write_cosave(self.cosave_path.temp)
         self.cosave_path.untemp()
 
-# Factory
-def get_cosave_type(game_fsName):
-    """:rtype: type"""
-    if game_fsName == u'Oblivion':
-        _xSEHeader.savefile_tag = 'OBSE'
-        _xSEChunk._pluggy_signature = 0x2330
-    elif game_fsName == u'Skyrim':
-        _xSEHeader.savefile_tag = 'SKSE'
-        _xSEChunk._xse_signature = 0x0
-    elif game_fsName == u'Skyrim Special Edition':
-        _xSEHeader.savefile_tag = 'SKSE'
-        _xSEChunk._xse_signature = 0x0
-        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
-    elif game_fsName == u'Fallout4':
-        _xSEHeader.savefile_tag = 'F4SE'
-        _xSEChunk._xse_signature = 0x0
-        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
-    elif game_fsName == u'Fallout3':
-        _xSEHeader.savefile_tag = 'FOSE'
-    elif game_fsName == u'FalloutNV':
-        _xSEHeader.savefile_tag = 'NVSE'
-    return xSECoSave
-
-#------------------------------------------------------------------------------
 class PluggyFile(ACoSaveFile):
     """Represents a .pluggy cofile for saves. Used for editing masters list."""
     chunk_type = _PluggyChunk
@@ -597,3 +579,26 @@ class PluggyFile(ACoSaveFile):
         """Save data to file safely."""
         self.save(self.cosave_path.temp,self.cosave_path.mtime)
         self.cosave_path.untemp()
+
+# Factory
+def get_cosave_type(game_fsName):
+    """:rtype: type"""
+    if game_fsName == u'Oblivion':
+        _xSEHeader.savefile_tag = 'OBSE'
+        _xSEChunk._pluggy_signature = 0x2330
+    elif game_fsName == u'Skyrim':
+        _xSEHeader.savefile_tag = 'SKSE'
+        _xSEChunk._xse_signature = 0x0
+    elif game_fsName == u'Skyrim Special Edition':
+        _xSEHeader.savefile_tag = 'SKSE'
+        _xSEChunk._xse_signature = 0x0
+        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
+    elif game_fsName == u'Fallout4':
+        _xSEHeader.savefile_tag = 'F4SE'
+        _xSEChunk._xse_signature = 0x0
+        _xSEPluginChunk._espm_chunk_type = {'SDOM', 'DOML'}
+    elif game_fsName == u'Fallout3':
+        _xSEHeader.savefile_tag = 'FOSE'
+    elif game_fsName == u'FalloutNV':
+        _xSEHeader.savefile_tag = 'NVSE'
+    return xSECoSave
