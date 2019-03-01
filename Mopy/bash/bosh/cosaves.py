@@ -87,6 +87,7 @@ class _xSEHeader(_AHeader):
         _pack(out, '=H', self.se_version)
         _pack(out, '=H', self.se_minor_version)
         _pack(out, '=I', self.game_version)
+        _pack(out, '=I', self.num_plugins)
 
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
@@ -466,9 +467,11 @@ class xSECoSave(ACoSaveFile):
     def write_cosave(self, out_path):
         mtime = self.cosave_path.mtime # must exist !
         with sio() as buff:
-            self.cosave_header.write_header(buff)
+            # Update the number of plugins, then write out
+            my_header = self.cosave_header # type: _xSEHeader
+            my_header.num_plugins = len(self.chunks)
+            my_header.write_header(buff)
             #--Plugins
-            _pack(buff,'=I', len(self.chunks))
             for plugin_ch in self.chunks: # type: _xSEChunk
                 _pack(buff, '=I', plugin_ch.plugin_signature)
                 _pack(buff, '=I', plugin_ch.num_plugin_chunks)
