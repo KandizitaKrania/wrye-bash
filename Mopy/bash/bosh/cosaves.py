@@ -129,17 +129,16 @@ class _AChunk(object):
 
 class _xSEPluginChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
-    __slots__ = ('chunkType', 'chunkVersion', 'chunkLength', 'chunkData')
+    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
 
     def __init__(self, ins):
-        self.chunkType = unpack_4s(ins)
-        self.chunkVersion = unpack_int(ins)
-        self.chunkLength = unpack_int(ins) # the length of the chunk data block
-        self.chunkData = ins.read(self.chunkLength)
+        self.chunk_type = unpack_4s(ins)
+        self.chunk_version = unpack_int(ins)
+        self.chunk_length = unpack_int(ins) # length of the chunk data block
+        self.chunk_data = ins.read(self.chunk_length)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
-        chunkType = self.chunkType
-        if chunkType == 'RVTS':
+        if self.chunk_type == 'RVTS':
             #--OBSE String
             modIndex, stringID, stringLength, = _unpack(ins, '=BIH', 7)
             stringData = decode(ins.read(stringLength))
@@ -147,7 +146,7 @@ class _xSEPluginChunk(_AChunk):
                 modIndex, save_masters[modIndex].s))
             log(u'    ' + _(u'ID  :') + u'  %u' % stringID)
             log(u'    ' + _(u'Data:') + u'  %s' % stringData)
-        elif chunkType == 'RVRA':
+        elif self.chunk_type == 'RVRA':
             #--OBSE Array
             modIndex, arrayID, keyType, isPacked, = _unpack(ins, '=BIBB', 7)
             if modIndex == 255:
@@ -165,7 +164,7 @@ class _xSEPluginChunk(_AChunk):
                 log(_(u'    Type:  StringMap'))
             else:
                 log(_(u'    Type:  Unknown'))
-            if self.chunkVersion >= 1:
+            if self.chunk_version >= 1:
                 numRefs, = _unpack(ins, '=I', 4)
                 if numRefs > 0:
                     log(u'    Refs:')
@@ -207,39 +206,37 @@ class _xSEPluginChunk(_AChunk):
                                            dataStr))
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
-        if self.chunkType not in self._espm_chunk_type:
+        if self.chunk_type not in self._espm_chunk_type:
             return
-        with sio(self.chunkData) as ins:
+        with sio(self.chunk_data) as ins:
             num_of_masters = unpack_byte(ins) # this won't change
             with sio() as out:
                 _pack(out, 'B', num_of_masters)
-                while ins.tell() < len(self.chunkData):
+                while ins.tell() < len(self.chunk_data):
                     modName = GPath(unpack_str16(ins))
                     modName = master_renames_dict.get(modName, modName)
                     modname_str = encode(modName.s,
                                          firstEncoding=self._esm_encoding)
                     _pack(out, '=H', len(modname_str))
                     out.write(modname_str)
-                self.chunkData = out.getvalue()
-        old_chunk_length = self.chunkLength
-        self.chunkLength = len(self.chunkData)
-        plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
+                self.chunk_data = out.getvalue()
+        old_chunk_length = self.chunk_length
+        self.chunk_length = len(self.chunk_data)
+        plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEPluggyChunk(_xSEPluginChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
-        chunkVersion = self.chunkVersion
-        chunkBuff = self.chunkData
-        chunkTypeNum, = struct_unpack('=I', self.chunkType)
+        chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum == 1:
             #--Pluggy TypeESP
             log(_(u'    Pluggy ESPs'))
             log(_(u'    EID   ID    Name'))
-            while ins.tell() < len(chunkBuff):
-                if chunkVersion == 2:
+            while ins.tell() < len(self.chunk_data):
+                if self.chunk_version == 2:
                     espId, modId, = _unpack(ins, '=BB', 2)
                     log(u'    %02X    %02X' % (espId, modId))
                     espMap[modId] = espId
-                else:  #elif chunkVersion == 1"
+                else:  #elif self.chunk_version == 1:
                     espId, modId, modNameLen, = _unpack(ins, '=BBI', 6)
                     modName = ins.read(modNameLen)
                     log(u'    %02X    %02X    %s' % (espId, modId, modName))
@@ -248,7 +245,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
             #--Pluggy TypeSTR
             log(_(u'    Pluggy String'))
             strId, modId, strFlags, = _unpack(ins, '=IBB', 6)
-            strData = ins.read(len(chunkBuff) - ins.tell())
+            strData = ins.read(len(self.chunk_data) - ins.tell())
             log(u'      ' + _(u'StrID :') + u' %u' % strId)
             log(u'      ' + _(u'ModID :') + u' %02X %s' % (
                 modId, espMap[modId] if modId in espMap else u'ERROR',))
@@ -263,7 +260,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
                 modId, espMap[modId] if modId in espMap else u'ERROR',))
             log(_(u'      Flags : %u') % (arrFlags,))
             log(_(u'      Size  : %u') % (arrSize,))
-            while ins.tell() < len(chunkBuff):
+            while ins.tell() < len(self.chunk_data):
                 elemIdx, elemType, = _unpack(ins, '=IB', 5)
                 elemStr = ins.read(4)
                 if elemType == 0:  #--Integer
@@ -279,7 +276,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
             #--Pluggy TypeName
             log(_(u'    Pluggy Name'))
             refId, = _unpack(ins, '=I', 4)
-            refName = ins.read(len(chunkBuff) - ins.tell())
+            refName = ins.read(len(self.chunk_data) - ins.tell())
             newName = u''
             for c in refName:
                 ch = c if (c >= chr(0x20)) and (c < chr(0x80)) else '.'
@@ -302,7 +299,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
             hudSid, modId, hudFlags, hudRootID, hudShow, hudPosX, hudPosY, \
             hudDepth, hudScaleX, hudScaleY, hudAlpha, hudAlignment, \
             hudAutoScale, = _unpack(ins, '=IBBBBffhffBBB', 29)
-            hudFileName = decode(ins.read(len(chunkBuff) - ins.tell()))
+            hudFileName = decode(ins.read(len(self.chunk_data) - ins.tell()))
             log(u'      ' + _(u'HudSID :') + u' %u' % hudSid)
             log(u'      ' + _(u'ModID  :') + u' %02X %s' % (
                 modId, espMap[modId] if modId in espMap else u'ERROR',))
@@ -330,7 +327,7 @@ class _xSEPluggyChunk(_xSEPluginChunk):
             hudFontName = decode(ins.read(hudFontNameLen))
             hudFontHeight, hudFontWidth, hudWeight, hudItalic, hudFontR, \
             hudFontG, hudFontB, = _unpack(ins, '=IIhBBBB', 14)
-            hudText = decode(ins.read(len(chunkBuff) - ins.tell()))
+            hudText = decode(ins.read(len(self.chunk_data) - ins.tell()))
             log(u'      ' + _(u'HudTID :') + u' %u' % hudTid)
             log(u'      ' + _(u'ModID  :') + u' %02X %s' % (
                 modId, espMap[modId] if modId in espMap else u'ERROR',))
@@ -356,24 +353,24 @@ class _xSEPluggyChunk(_xSEPluginChunk):
             log(u'      ' + _(u'FText  :') + u' %s' % hudText)
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
-        chunkTypeNum, = struct_unpack('=I', self.chunkType)
+        chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum != 1:
             return # TODO confirm this is the espm chunk for Pluggy
                    # It is not. 0 is, according to the downloadable save file
                    # documentation.
-        with sio(self.chunkData) as ins:
+        with sio(self.chunk_data) as ins:
             with sio() as out:
-                while ins.tell() < len(self.chunkData):
+                while ins.tell() < len(self.chunk_data):
                     espId, modId, modNameLen, = _unpack(ins, '=BBI', 6)
                     modName = GPath(ins.read(modNameLen))
                     modName = master_renames_dict.get(modName, modName)
                     _pack(out, '=BBI', espId, modId, len(modName.s))
                     out.write(encode(modName.cs, ##: why LowerCase ??
                                      firstEncoding=self._esm_encoding))
-                self.chunkData = out.getvalue()
-        old_chunk_length = self.chunkLength
-        self.chunkLength = len(self.chunkData)
-        plugin_chunk.plugin_data_size += self.chunkLength - old_chunk_length # Todo Test
+                self.chunk_data = out.getvalue()
+        old_chunk_length = self.chunk_length
+        self.chunk_length = len(self.chunk_data)
+        plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEChunk(_AChunk):
     """A single xSE chunk, composed of _xSEPluginChunk (and potentially
@@ -454,14 +451,14 @@ class xSECoSave(ACoSaveFile):
             log(u'-' * 80)
             espMap = {}
             for ch in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
-                chunkTypeNum, = struct_unpack('=I',ch.chunkType)
-                if ch.chunkType[0] >= ' ' and ch.chunkType[3] >= ' ': # HUH ?
+                chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
+                if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
                     log(u'  %4s  %-4u  %08X' % (
-                        ch.chunkType, ch.chunkVersion, ch.chunkLength))
+                        ch.chunk_type, ch.chunk_version, ch.chunk_length))
                 else:
                     log(u'  %04X  %-4u  %08X' % (
-                        chunkTypeNum, ch.chunkVersion, ch.chunkLength))
-                with sio(ch.chunkData) as ins:
+                        chunkTypeNum, ch.chunk_version, ch.chunk_length))
+                with sio(ch.chunk_data) as ins:
                     ch.log_chunk(log, ins, save_masters, espMap)
 
     def write_cosave(self, out_path):
@@ -477,9 +474,9 @@ class xSECoSave(ACoSaveFile):
                 _pack(buff, '=I', plugin_ch.num_plugin_chunks)
                 _pack(buff, '=I', plugin_ch.plugin_data_size)
                 for chunk in plugin_ch.plugin_chunks: # type: _xSEPluginChunk
-                    buff.write(chunk.chunkType)
-                    _pack(buff, '=2I', chunk.chunkVersion, chunk.chunkLength)
-                    buff.write(chunk.chunkData)
+                    buff.write(chunk.chunk_type)
+                    _pack(buff, '=2I', chunk.chunk_version, chunk.chunk_length)
+                    buff.write(chunk.chunk_data)
             text = buff.getvalue()
         with out_path.open('wb') as out:
             out.write(text)
