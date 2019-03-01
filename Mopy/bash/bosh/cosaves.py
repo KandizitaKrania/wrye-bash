@@ -169,26 +169,26 @@ class _xSEPluginChunk(_AChunk):
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEPluginChunkRVTS(_xSEPluginChunk):
-    __slots__ = ('modIndex', 'stringID', 'string_data')
+    __slots__ = ('mod_index', 'string_id', 'string_data')
 
     def __init__(self, ins):
         super(_xSEPluginChunkRVTS, self).__init__(ins)
-        self.modIndex = unpack_byte(ins)
-        self.stringID = unpack_int(ins)
+        self.mod_index = unpack_byte(ins)
+        self.string_id = unpack_int(ins)
         string_len = unpack_short(ins)
         self.string_data = ins.read(string_len)
 
     def write_chunk(self, out):
         super(_xSEPluginChunkRVTS, self).write_chunk(out)
-        _pack(out, '=B', self.modIndex)
-        _pack(out, '=I', self.stringID)
+        _pack(out, '=B', self.mod_index)
+        _pack(out, '=I', self.string_id)
         _pack(out, '=H', len(self.string_data))
         out.write(self.string_data)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
         log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
-            self.modIndex, save_masters[self.modIndex].s))
-        log(u'    ' + _(u'ID  :') + u'  %u' % self.stringID)
+            self.mod_index, save_masters[self.mod_index].s))
+        log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
         log(u'    ' + _(u'Data:') + u'  %s' % self.string_data)
 
 class _xSEPluginChunkRVRA(_xSEPluginChunk):
