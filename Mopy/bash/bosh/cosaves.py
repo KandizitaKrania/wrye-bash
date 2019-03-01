@@ -148,66 +148,6 @@ class _xSEPluginChunk(_AChunk):
         _pack(out, '=I', self.chunk_version)
         _pack(out, '=I', self.chunk_length)
 
-    def log_chunk(self, log, ins, save_masters, espmMap):
-        if self.chunk_type == 'RVRA':
-            #--OBSE Array
-            modIndex, arrayID, keyType, isPacked, = _unpack(ins, '=BIBB', 7)
-            if modIndex == 255:
-                log(_(u'    Mod :  %02X (Save File)') % modIndex)
-            else:
-                log(_(u'    Mod :  %02X (%s)') % (
-                    modIndex, save_masters[modIndex].s))
-            log(_(u'    ID  :  %u') % arrayID)
-            if keyType == 1: #Numeric
-                if isPacked:
-                    log(_(u'    Type:  Array'))
-                else:
-                    log(_(u'    Type:  Map'))
-            elif keyType == 3:
-                log(_(u'    Type:  StringMap'))
-            else:
-                log(_(u'    Type:  Unknown'))
-            if self.chunk_version >= 1:
-                numRefs, = _unpack(ins, '=I', 4)
-                if numRefs > 0:
-                    log(u'    Refs:')
-                    for x in range(numRefs):
-                        refModID, = _unpack(ins, '=B', 1)
-                        if refModID == 255:
-                            log(_(u'      %02X (Save File)') % refModID)
-                        else:
-                            log(u'      %02X (%s)' % (
-                                refModID, save_masters[refModID].s))
-            numElements, = _unpack(ins, '=I', 4)
-            log(_(u'    Size:  %u') % numElements)
-            for i in range(numElements):
-                if keyType == 1:
-                    key, = _unpack(ins, '=d', 8)
-                    keyStr = u'%f' % key
-                elif keyType == 3:
-                    keyLen, = _unpack(ins, '=H', 2)
-                    key = ins.read(keyLen)
-                    keyStr = decode(key)
-                else:
-                    keyStr = 'BAD'
-                dataType, = _unpack(ins, '=B', 1)
-                if dataType == 1:
-                    data, = _unpack(ins, '=d', 8)
-                    dataStr = u'%f' % data
-                elif dataType == 2:
-                    data, = _unpack(ins, '=I', 4)
-                    dataStr = u'%08X' % data
-                elif dataType == 3:
-                    dataLen, = _unpack(ins, '=H', 2)
-                    data = ins.read(dataLen)
-                    dataStr = decode(data)
-                elif dataType == 4:
-                    data, = _unpack(ins, '=I', 4)
-                    dataStr = u'%u' % data
-                log(u'    [%s]:%s = %s' % (keyStr, (
-                u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType],
-                                           dataStr))
-
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
         # TODO Will need rewriting now that chunk_data is gone
         if self.chunk_type not in self._espm_chunk_type:
@@ -250,6 +190,126 @@ class _xSEPluginChunkRVTS(_xSEPluginChunk):
             self.modIndex, save_masters[self.modIndex].s))
         log(u'    ' + _(u'ID  :') + u'  %u' % self.stringID)
         log(u'    ' + _(u'Data:') + u'  %s' % self.stringData)
+
+class _xSEPluginChunkRVRA(_xSEPluginChunk):
+    __slots__ = ('modIndex', 'arrayID', 'keyType', 'isPacked', 'references',
+                 'elements')
+
+    # Warning: Very complex definition coming up
+    def __init__(self, ins):
+        super(_xSEPluginChunkRVRA, self).__init__(ins)
+        self.modIndex = unpack_byte(ins)
+        self.arrayID = unpack_int(ins)
+        self.keyType = unpack_byte(ins)
+        self.isPacked = unpack_byte(ins)
+        if self.chunk_version >= 1:
+            num_references = unpack_int(ins)
+            self.references = []
+            for x in xrange(num_references):
+                self.references.append(unpack_byte(ins))
+        num_elements = unpack_int(ins)
+        self.elements = []
+        for x in xrange(num_elements):
+            if self.keyType == 1:
+                key, = _unpack(ins, '=d', 8)
+            elif self.keyType == 3:
+                key = ins.read(unpack_short(ins))
+            else:
+                raise RuntimeError(u'Unknown or unsupported key type %u.' %
+                                   self.keyType)
+            dataType = unpack_byte(ins)
+            if dataType == 1:
+                stored_data, = _unpack(ins, '=d', 8)
+            elif dataType == 2:
+                stored_data = unpack_int(ins)
+            elif dataType == 3:
+                data_len = unpack_short(ins)
+                stored_data = ins.read(data_len)
+            elif dataType == 4:
+                stored_data = unpack_int(ins)
+            else:
+                raise RuntimeError(u'Unknown or unsupported data type %u.' %
+                                   dataType)
+            self.elements.append((key, dataType, stored_data))
+
+    def write_chunk(self, out):
+        super(_xSEPluginChunkRVRA, self).write_chunk(out)
+        _pack(out, '=B', self.modIndex)
+        _pack(out, '=I', self.arrayID)
+        _pack(out, '=B', self.keyType)
+        _pack(out, '=B', self.isPacked)
+        if self.chunk_version >= 1:
+            _pack(out, '=I', len(self.references))
+            for reference in self.references:
+                _pack(out, '=B', reference)
+        _pack(out, '=I', len(self.elements))
+        for element in self.elements:
+            key, dataType, stored_data = element[0], element[1], element[2]
+            if self.keyType == 1:
+                _pack(out, '=d', key)
+            elif self.keyType == 3:
+                _pack(out, '=H', key)
+            else:
+                raise RuntimeError(u'Unknown or unsupported key type %u.' %
+                                   self.keyType)
+            _pack(out, '=B', dataType)
+            if dataType == 1:
+                _pack(out, '=d', stored_data)
+            elif dataType == 2:
+                _pack(out, '=I', stored_data)
+            elif dataType == 3:
+                _pack(out, '=H', len(stored_data))
+                out.write(stored_data)
+            elif dataType == 4:
+                _pack(out, '=I', stored_data)
+            else:
+                raise RuntimeError(u'Unknown or unsupported data type %u.' %
+                                   dataType)
+
+    def log_chunk(self, log, ins, save_masters, espmMap):
+        if self.modIndex == 255:
+            log(_(u'    Mod :  %02X (Save File)') % self.modIndex)
+        else:
+            log(_(u'    Mod :  %02X (%s)') % (
+                self.modIndex, save_masters[self.modIndex].s))
+        log(_(u'    ID  :  %u') % self.arrayID)
+        if self.keyType == 1: #Numeric
+            if self.isPacked:
+                log(_(u'    Type:  Array'))
+            else:
+                log(_(u'    Type:  Map'))
+        elif self.keyType == 3:
+            log(_(u'    Type:  StringMap'))
+        else:
+            log(_(u'    Type:  Unknown'))
+        if self.chunk_version >= 1:
+            log(u'    Refs:')
+            for refModID in self.references:
+                if refModID == 255:
+                    log(_(u'      %02X (Save File)') % refModID)
+                else:
+                    log(u'      %02X (%s)' % (refModID,
+                                              save_masters[refModID].s))
+        log(_(u'    Size:  %u') % len(self.elements))
+        for element in self.elements:
+            key, dataType, stored_data = element[0], element[1], element[2]
+            if self.keyType == 1:
+                keyStr = u'%f' % key
+            elif self.keyType == 3:
+                keyStr = decode(key)
+            else:
+                keyStr = u'BAD'
+            dataStr = u'UNKNOWN'
+            if dataType == 1:
+                dataStr = u'%f' % stored_data
+            elif dataType == 2:
+                dataStr = u'%08X' % stored_data
+            elif dataType == 3:
+                dataStr = decode(stored_data)
+            elif dataType == 4:
+                dataStr = u'%u' % stored_data
+            log(u'    [%s]:%s = %s' % (keyStr, (
+                u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
 class _xSEPluggyChunk(_xSEPluginChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
