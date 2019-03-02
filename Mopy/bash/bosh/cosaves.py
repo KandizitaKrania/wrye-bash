@@ -140,9 +140,11 @@ class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     _fully_decoded = False
     __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
+    # TODO(inf) If you're really bored, you can add logic to auto-update the
+    # chunk_length variable
 
-    def __init__(self, ins):
-        self.chunk_type = unpack_4s(ins)
+    def __init__(self, ins, chunk_type):
+        self.chunk_type = chunk_type
         self.chunk_version = unpack_int(ins)
         self.chunk_length = unpack_int(ins)
         if not self._fully_decoded: # if we haven't fully decoded this record,
@@ -150,14 +152,15 @@ class _xSEChunk(_AChunk):
             self.chunk_data = ins.read(self.chunk_length)
 
     def write_chunk(self, out):
-        _pack(out, '=4s', self.chunk_type)
+        # Don't forget to reverse it when writing again
+        _pack(out, '=4s', self.chunk_type[::-1])
         _pack(out, '=I', self.chunk_version)
         _pack(out, '=I', self.chunk_length)
         if not self._fully_decoded:
             out.write(self.chunk_data)
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
-        # TODO Will need rewriting now that chunk_data is gone
+        # TODO Will need rewriting now that the MODS record is fully decoded
         if self.chunk_type not in self._espm_chunk_type:
             return
         with sio(self.chunk_data) as ins:
@@ -184,8 +187,8 @@ class _xSEChunkARVR(_xSEChunk):
                  'references', 'elements')
 
     # Warning: Very complex definition coming up
-    def __init__(self, ins):
-        super(_xSEChunkARVR, self).__init__(ins)
+    def __init__(self, ins, chunk_type):
+        super(_xSEChunkARVR, self).__init__(ins, chunk_type)
         self.mod_index = unpack_byte(ins)
         self.array_id = unpack_int(ins)
         self.key_type = unpack_byte(ins)
@@ -312,8 +315,8 @@ class _xSEChunkMODS(_xSEChunk):
     _fully_decoded = True
     __slots__ = ('mod_names',)
 
-    def __init__(self, ins):
-        super(_xSEChunkMODS, self).__init__(ins)
+    def __init__(self, ins, chunk_type):
+        super(_xSEChunkMODS, self).__init__(ins, chunk_type)
         mod_count = unpack_byte(ins)
         self.mod_names = []
         for x in xrange(mod_count):
@@ -338,8 +341,8 @@ class _xSEChunkSTVR(_xSEChunk):
     _fully_decoded = True
     __slots__ = ('mod_index', 'string_id', 'string_data')
 
-    def __init__(self, ins):
-        super(_xSEChunkSTVR, self).__init__(ins)
+    def __init__(self, ins, chunk_type):
+        super(_xSEChunkSTVR, self).__init__(ins, chunk_type)
         self.mod_index = unpack_byte(ins)
         self.string_id = unpack_int(ins)
         string_len = unpack_short(ins)
@@ -519,10 +522,15 @@ class _xSEPluginChunk(_AChunk):
         self.num_plugin_chunks = unpack_int(ins)
         self.plugin_data_size = unpack_int(ins) # update it if you edit chunks
         self.plugin_chunks = []
-        chunk_type = self._get_plugin_chunk_type(ins, self._xse_signature,
-                                                 self._pluggy_signature)
+        ch_class, ch_type = self._get_plugin_chunk_type(ins,
+                                                        self._xse_signature,
+                                                        self._pluggy_signature)
         for x in xrange(self.num_plugin_chunks):
-            self.plugin_chunks.append(chunk_type(ins))
+            # If ch_type is None, that means we don't have to pass it on
+            if ch_type:
+                self.plugin_chunks.append(ch_class(ins, ch_type))
+            else:
+                self.plugin_chunks.append(ch_class(ins))
 
     def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
         if self.plugin_signature == pluggy_signature:
@@ -530,16 +538,16 @@ class _xSEPluginChunk(_AChunk):
         elif self.plugin_signature == xse_signature:
             # The chunk type strings are reversed in the cosaves
             chunk_type = unpack_4s(ins)[::-1]
+            chunk_class = _xSEChunk
             if chunk_type == 'ARVR':
-                return _xSEChunkARVR
+                chunk_class = _xSEChunkARVR
             elif chunk_type == 'CROB':
-                return _xSEChunkCROB
+                chunk_class = _xSEChunkCROB
             elif chunk_type == 'MODS':
-                return _xSEChunkMODS
+                chunk_class = _xSEChunkMODS
             elif chunk_type == 'STVR':
-                return _xSEChunkSTVR
-            # Unknown (probably new) type of chunk
-            return _xSEChunk
+                chunk_class = _xSEChunkSTVR
+            return chunk_class, chunk_type
         return _AChunk
 
 class _PluggyChunk(_AChunk):
