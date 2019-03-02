@@ -120,6 +120,8 @@ class _AChunk(object):
         :param out: The output stream to write to.
         """
 
+    # TODO(inf) Drop the ins parameter once refactoring is done
+    # We'll have entirely shifted to loading the chunks inside __init__ by then
     def log_chunk(self, log, ins, save_masters, espmMap):
         """
         :param save_masters: the espm masters of the save, used in xSE chunks
@@ -175,6 +177,8 @@ class _xSEChunk(_AChunk):
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEChunkARVR(_xSEChunk):
+    """An ARVR (Array Variable) record. Only available in OBSE and NVSE. See
+    ArrayVar.h in xSE's source code for the specification."""
     _fully_decoded = True
     __slots__ = ('mod_index', 'array_id', 'key_type', 'is_packed',
                  'references', 'elements')
@@ -296,6 +300,8 @@ class _xSEChunkARVR(_xSEChunk):
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
 class _xSEChunkSTVR(_xSEChunk):
+    """An STVR (String Variable) record. Only available in OBSE and NVSE. See
+    StringVar.h in xSE's source code for the specification."""
     _fully_decoded = True
     __slots__ = ('mod_index', 'string_id', 'string_data')
 
@@ -495,6 +501,7 @@ class _xSEPluginChunk(_AChunk):
                 return _xSEChunkARVR
             elif chunk_type == 'STVR':
                 return _xSEChunkSTVR
+            # Unknown (probably new) type of chunk
             return _xSEChunk
         return _AChunk
 
