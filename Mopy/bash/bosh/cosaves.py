@@ -305,6 +305,33 @@ class _xSEChunkCROB(_xSEChunk):
     created (no specification avilable)."""
     # TODO(inf) Decode this
 
+class _xSEChunkMODS(_xSEChunk):
+    """A MODS (Mod Files) record. Available for all script extenders. See
+    Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
+    specification available)."""
+    _fully_decoded = True
+    __slots__ = ('mod_names',)
+
+    def __init__(self, ins):
+        super(_xSEChunkMODS, self).__init__(ins)
+        mod_count = unpack_byte(ins)
+        self.mod_names = []
+        for x in xrange(mod_count):
+            name_len = unpack_short(ins)
+            self.mod_names.append(ins.read(name_len))
+
+    def write_chunk(self, out):
+        super(_xSEChunkMODS, self).write_chunk(out)
+        _pack(out, '=B', len(self.mod_names))
+        for mod_name in self.mod_names:
+            _pack(out, '=H', len(mod_name))
+            out.write(mod_name)
+
+    def log_chunk(self, log, ins, save_masters, espmMap):
+        log(_(u'    %u loaded mods:') % len(self.mod_names))
+        for mod_name in self.mod_names:
+            log(_(u'     - %s') % mod_name) # TODO(inf) decode(mod_name) here?
+
 class _xSEChunkSTVR(_xSEChunk):
     """An STVR (String Variable) record. Only available in OBSE and NVSE. See
     StringVar.h in xSE's source code for the specification."""
@@ -507,6 +534,8 @@ class _xSEPluginChunk(_AChunk):
                 return _xSEChunkARVR
             elif chunk_type == 'CROB':
                 return _xSEChunkCROB
+            elif chunk_type == 'MODS':
+                return _xSEChunkMODS
             elif chunk_type == 'STVR':
                 return _xSEChunkSTVR
             # Unknown (probably new) type of chunk
