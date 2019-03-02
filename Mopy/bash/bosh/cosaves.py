@@ -510,22 +510,23 @@ class _xSEPluggyChunk(_xSEChunk):
         plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
 
 class _xSEPluginChunk(_AChunk):
-    """A single xSE chunk, composed of _xSEChunk (and potentially _PluggyChunk)
-    objects."""
+    """A single xSE chunk, composed of _xSEChunk (and potentially
+    _xSEPluggyChunk) objects."""
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
     __slots__ = ('plugin_signature', 'num_plugin_chunks', 'plugin_data_size',
                  'plugin_chunks')
 
     def __init__(self, ins):
-        self.plugin_signature = unpack_int(ins) # aka opcodeBase on pre papyrus
+        self.plugin_signature = unpack_4s(ins)[::-1] # aka opcodeBase on pre
+                                                     # papyrus
         self.num_plugin_chunks = unpack_int(ins)
         self.plugin_data_size = unpack_int(ins) # update it if you edit chunks
         self.plugin_chunks = []
-        ch_class, ch_type = self._get_plugin_chunk_type(ins,
+        for x in xrange(self.num_plugin_chunks):
+            ch_class, ch_type = self._get_plugin_chunk_type(ins,
                                                         self._xse_signature,
                                                         self._pluggy_signature)
-        for x in xrange(self.num_plugin_chunks):
             # If ch_type is None, that means we don't have to pass it on
             if ch_type:
                 self.plugin_chunks.append(ch_class(ins, ch_type))
@@ -533,22 +534,20 @@ class _xSEPluginChunk(_AChunk):
                 self.plugin_chunks.append(ch_class(ins))
 
     def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
-        if self.plugin_signature == pluggy_signature:
-            return _xSEPluggyChunk
-        elif self.plugin_signature == xse_signature:
-            # The chunk type strings are reversed in the cosaves
-            chunk_type = unpack_4s(ins)[::-1]
-            chunk_class = _xSEChunk
-            if chunk_type == 'ARVR':
-                chunk_class = _xSEChunkARVR
-            elif chunk_type == 'CROB':
-                chunk_class = _xSEChunkCROB
-            elif chunk_type == 'MODS':
-                chunk_class = _xSEChunkMODS
-            elif chunk_type == 'STVR':
-                chunk_class = _xSEChunkSTVR
-            return chunk_class, chunk_type
-        return _AChunk
+        # TODO(inf) What about pluggy chunks inside xSE cosaves?
+
+        # The chunk type strings are reversed in the cosaves
+        chunk_type = unpack_4s(ins)[::-1]
+        chunk_class = _xSEChunk
+        if chunk_type == 'ARVR':
+            chunk_class = _xSEChunkARVR
+        elif chunk_type == 'CROB':
+            chunk_class = _xSEChunkCROB
+        elif chunk_type == 'MODS':
+            chunk_class = _xSEChunkMODS
+        elif chunk_type == 'STVR':
+            chunk_class = _xSEChunkSTVR
+        return chunk_class, chunk_type
 
 class _PluggyChunk(_AChunk):
     """A single pluggy chunk, of the type that occurs in .pluggy files."""
