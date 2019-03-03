@@ -24,22 +24,15 @@
 
 __author__ = "Ganda"
 
-import os
-
-from .. import balt
-from .. import bass
-from .. import bolt
-from .. import bosh
-from .. import bush
-from .. import env
 import wx
 import wx.wizard as wiz
 
-from ..fomod import FomodInstaller, MissingDependency
+from .. import balt, bass, bolt, bosh, bush, env
+from ..fomod import FailedCondition, FomodInstaller
 
 
 class WizardReturn(object):
-    __slots__ = ('cancelled', 'install_files', 'install', 'page_size', 'pos')
+    __slots__ = ("cancelled", "install_files", "install", "page_size", "pos")
 
     def __init__(self):
         # cancelled: true if the user canceled or if an error occurred
@@ -56,23 +49,6 @@ class WizardReturn(object):
 
 class InstallerFomod(wiz.Wizard):
     def __init__(self, parent_window, installer, page_size, pos):
-        fomod_file = installer.fomod_file().s
-        data_path = bass.dirs['mods']
-        ver = env.get_file_version(bass.dirs['app'].join(bush.game.exe).s)
-        game_ver = u'.'.join([unicode(i) for i in ver])
-        self.parser = FomodInstaller(fomod_file, dest=data_path,
-                                     game_version=game_ver)
-        mod_name = self.parser.fomod_name
-
-        style = wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER | wx.MAXIMIZE_BOX
-        wiz.Wizard.__init__(self, parent_window,
-                            title=_(u'Fomod Installer - ' + mod_name),
-                            pos=pos, style=style)
-
-        # 'dummy' page tricks the wizard into always showing the "Next" button
-        self.dummy = wiz.PyWizardPage(self)
-        self.next = None
-
         # True prevents actually moving to the 'next' page.
         # We use this after the "Next" button is pressed,
         # while the parser is running to return the _actual_ next page
@@ -80,15 +56,34 @@ class InstallerFomod(wiz.Wizard):
         # 'finishing' is to allow the "Next" button to be used
         # when it's name is changed to 'Finish' on the last page of the wizard
         self.finishing = False
-        # saving this dict allows for faster processing of the files the fomod
+        # saving this list allows for faster processing of the files the fomod
         # installer will return.
-        self.files_dict = installer.fileSizeCrcs
+        self.files_list = [a[0] for a in installer.fileSizeCrcs]
+
+        fomod_file = installer.fomod_file().s
+        data_path = bass.dirs["mods"]
+        ver = env.get_file_version(bass.dirs["app"].join(bush.game.exe).s)
+        game_ver = u".".join([unicode(i) for i in ver])
+
+        self.parser = FomodInstaller(fomod_file, self.files_list, data_path, game_ver)
+
+        style = wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER | wx.MAXIMIZE_BOX
+        wiz.Wizard.__init__(
+            self,
+            parent_window,
+            title=_(u"Fomod Installer - " + self.parser.fomod_name),
+            pos=pos,
+            style=style,
+        )
 
         self.is_archive = isinstance(installer, bosh.InstallerArchive)
         if self.is_archive:
             self.archive_path = bass.getTempDir()
         else:
-            self.archive_path = bass.dirs['installers'].join(installer.archive)
+            self.archive_path = bass.dirs["installers"].join(installer.archive)
+
+        # 'dummy' page tricks the wizard into always showing the "Next" button
+        self.dummy = wiz.PyWizardPage(self)
 
         # Intercept the changing event so we can implement 'block_change'
         self.Bind(wiz.EVT_WIZARD_PAGE_CHANGING, self.on_change)
@@ -105,27 +100,6 @@ class InstallerFomod(wiz.Wizard):
         # First page to the saved size
         self.SetPageSize((600, 500))
         self.first_page = True
-
-    # bain expects a "relative dest file" -> "relative src file"
-    # mapping to install. Fomod provides multiple different
-    # combinations of mappings, requiring this little hack
-    def _process_fomod_dict(self, files_dict):
-        final_dict = bolt.LowerDict()
-        for src, dest in files_dict.iteritems():
-            dest = dest.replace("/", os.sep).replace("\\", os.sep)
-            src = src.replace("/", os.sep).replace("\\", os.sep)
-            for file_tuple in self.files_dict:
-                fpath = file_tuple[0].replace("/", os.sep).replace("\\", os.sep)
-                if src.lower() == fpath.lower():  # src is a file
-                    final_dict[dest] = src
-                    break
-                elif fpath.lower().startswith(src.lower()):  # src is a folder
-                    src_len = len(src)
-                    fdest = dest + fpath[src_len:]
-                    if fdest.startswith(os.sep):
-                        fdest = fdest[1:]
-                    final_dict[fdest] = fpath
-        return final_dict
 
     def on_close(self, event):
         if not self.IsMaximized():
@@ -147,15 +121,6 @@ class InstallerFomod(wiz.Wizard):
                 self.pos = self.GetPosition()
             event.Skip()
 
-    def get_next_page(self):
-        step = next(self.parser)
-        if step.get('finished', False):
-            self.finishing = True
-            return PageFinish(self)
-        else:
-            self.finishing = False
-            return PageSelect(self, step['name'], step['groups'])
-
     def on_change(self, event):
         if event.GetDirection():
             if not self.finishing:
@@ -165,44 +130,54 @@ class InstallerFomod(wiz.Wizard):
                     # So the parser can continue parsing,
                     # Then show the page that the parser returns,
                     # rather than the dummy page
-                    event.GetPage().on_next()
+                    selection = event.GetPage().on_next()
                     event.Veto()
                     self.block_change = False
+                    next_page = self.parser.next_(selection)
+                    if next_page is None:
+                        self.finishing = True
+                        self.ShowPage(PageFinish(self))
+                    else:
+                        self.finishing = False
+                        self.ShowPage(PageSelect(self, next_page))
                 else:
                     self.block_change = True
-                    return
-            else:
-                return
         else:
             # Previous, pop back to the last state,
             # and resume execution
             event.Veto()
-            answer = {'previous_step': True}
-            self.parser.send(answer)
             self.block_change = False
-        self.next = self.get_next_page()
-        self.ShowPage(self.next)
+            self.finishing = False
+            payload = self.parser.previous()
+            if payload is None:  # at the start
+                return  # do nothing
+            page, previous_selection = payload
+            gui_page = PageSelect(self, page)
+            gui_page.select(previous_selection)
+            self.ShowPage(gui_page)
 
     def run(self):
         try:
-            self.parser.send(None)
-        except MissingDependency as exc:
-            msg = "This installer cannot start due to the following unmet conditions:\n  - "
-            dialog = wx.MessageDialog(self, msg + exc[1], caption="Cannot Run Installer",
-                                      style=wx.OK | wx.CENTER | wx.ICON_EXCLAMATION)
+            first_page = self.parser.start()
+        except FailedCondition as exc:
+            msg = "This installer cannot start due to the following unmet conditions:\n"
+            for line in str(exc).splitlines():
+                msg += "  {}\n".format(line)
+            dialog = wx.MessageDialog(
+                self,
+                msg,
+                caption="Cannot Run Installer",
+                style=wx.OK | wx.CENTER | wx.ICON_EXCLAMATION,
+            )
             dialog.ShowModal()
             self.ret.cancelled = True
         else:
-            page = self.get_next_page()
-            self.ret.cancelled = not self.RunWizard(page)
-            install_files = bolt.LowerDict(self.parser.collected_files)
-            self.ret.install_files = self._process_fomod_dict(install_files)
+            if first_page is not None:  # if installer has any gui pages
+                self.ret.cancelled = not self.RunWizard(PageSelect(self, first_page))
+            self.ret.install_files = bolt.LowerDict(self.parser.files())
         # Clean up temp files
         if self.is_archive:
-            try:
-                bass.rmTempDir()
-            except Exception:
-                pass
+            bass.rmTempDir()
         return self.ret
 
 
@@ -267,14 +242,16 @@ class PageError(PageInstaller):
 #  that item is selected
 # ------------------------------------------------------------
 class PageSelect(PageInstaller):
-    def __init__(self, parent, step_name, list_groups):
+    def __init__(self, parent, page):
         PageInstaller.__init__(self, parent)
 
         # group_sizer -> [option_button, ...]
         self.group_option_map = {}
 
         sizer_main = wx.FlexGridSizer(2, 1, 10, 10)
-        label_step_name = wx.StaticText(self, wx.ID_ANY, step_name, style=wx.ALIGN_CENTER)
+        label_step_name = wx.StaticText(
+            self, wx.ID_ANY, page.name, style=wx.ALIGN_CENTER
+        )
         label_step_name.SetFont(wx.Font(12, wx.DEFAULT, wx.NORMAL, wx.NORMAL, 0, ""))
         sizer_main.Add(label_step_name, 0, wx.EXPAND)
         sizer_content = wx.GridSizer(1, 2, 5, 5)
@@ -287,22 +264,16 @@ class PageSelect(PageInstaller):
 
         panel_groups = wx.ScrolledWindow(self, -1)
         panel_groups.SetScrollbars(20, 20, 50, 50)
-        sizer_groups = wx.FlexGridSizer(len(list_groups), 1, 5, 5)
-        for row in xrange(len(list_groups)):
+        sizer_groups = wx.FlexGridSizer(len(page), 1, 5, 5)
+        for row in xrange(len(page)):
             sizer_groups.AddGrowableRow(row)
-        for group in list_groups:
-            group_name = group['name']
-            group_type = group['type']
-            group_id = group['id']
-            options = group['plugins']
-            options_num = len(options)
+        for group in page:
+            options_num = len(group)
 
             sizer_group = wx.FlexGridSizer(2, 1, 7, 7)
             sizer_group.AddGrowableRow(1)
-            sizer_group.group_id = group_id
-            sizer_group.group_name = group_name
-            sizer_group.group_type = group_type
-            sizer_group.Add(balt.StaticText(panel_groups, group_name))
+            sizer_group.group_object = group
+            sizer_group.Add(balt.StaticText(panel_groups, group.name))
 
             sizer_options = wx.GridSizer(options_num, 1, 2, 2)
             sizer_group.Add(sizer_options)
@@ -316,52 +287,47 @@ class PageSelect(PageInstaller):
             required_disable = False
 
             # group type forces selection
-            group_force_selection = group_type in ('SelectExactlyOne', 'SelectAtLeastOne')
+            group_force_selection = group.type in (
+                "SelectExactlyOne",
+                "SelectAtLeastOne",
+            )
 
-            for option in options:
-                if option == options[0]:
+            for option in group:
+                if option is group[0]:
                     radio_style = wx.RB_GROUP
                 else:
                     radio_style = 0
 
-                option_id = option['id']
-                option_name = option['name']
-                option_image = option['image']
-                option_desc = option['description']
-                option_type = option['type']
-
-                if group_type in ('SelectExactlyOne', 'SelectAtMostOne'):
-                    button = wx.RadioButton(panel_groups, label=option_name, style=radio_style)
+                if group.type in ("SelectExactlyOne", "SelectAtMostOne"):
+                    button = wx.RadioButton(
+                        panel_groups, label=option.name, style=radio_style
+                    )
                 else:
-                    button = wx.CheckBox(panel_groups, label=option_name)
-                    if group_type == 'SelectAll':
+                    button = wx.CheckBox(panel_groups, label=option.name)
+                    if group.type == "SelectAll":
                         button.SetValue(True)
                         any_selected = True
                         button.Disable()
 
-                if option_type == 'Required':
+                if option.type == "Required":
                     button.SetValue(True)
                     any_selected = True
-                    if group_type in ('SelectExactlyOne', 'SelectAtMostOne'):
+                    if group.type in ("SelectExactlyOne", "SelectAtMostOne"):
                         required_disable = True
                     else:
                         button.Disable()
-                elif option_type == 'Recommended':
+                elif option.type == "Recommended":
                     if not any_selected or not group_force_selection:
                         button.SetValue(True)
                         any_selected = True
-                elif option_type in ('Optional', 'CouldBeUsable'):
+                elif option.type in ("Optional", "CouldBeUsable"):
                     if first_selectable is None:
                         first_selectable = button
-                elif option_type == 'NotUsable':
+                elif option.type == "NotUsable":
                     button.SetValue(False)
                     button.Disable()
 
-                button.option_id = option_id
-                button.option_image = option_image
-                button.option_desc = option_desc
-                button.option_type = option_type
-
+                button.option_object = option
                 sizer_options.Add(button)
                 button.Bind(wx.EVT_ENTER_WINDOW, self.on_hover)
                 self.group_option_map.setdefault(sizer_group, []).append(button)
@@ -375,8 +341,8 @@ class PageSelect(PageInstaller):
                 for button in self.group_option_map[sizer_group]:
                     button.Disable()
 
-            if group_type == 'SelectAtMostOne':
-                none_button = wx.RadioButton(panel_groups, label='None')
+            if group.type == "SelectAtMostOne":
+                none_button = wx.RadioButton(panel_groups, label="None")
                 if not any_selected:
                     none_button.SetValue(True)
                 elif required_disable:
@@ -395,12 +361,15 @@ class PageSelect(PageInstaller):
         self.SetSizer(sizer_main)
         self.Layout()
 
+    # fixme XXX: hover doesn't work on disabled buttons
+    # fixme XXX: types other than optional should be shown in some visual way (button colour?)
     def on_hover(self, event):
         button = event.GetEventObject()
+        option = button.option_object
         self._enableForward(True)
 
         self.bmp_item.Freeze()
-        img = self.parent.archive_path.join(button.option_image)
+        img = self.parent.archive_path.join(option.image)
         if img.isfile():
             image = wx.Bitmap(img.s)
             self.bmp_item.SetBitmap(image)
@@ -408,56 +377,66 @@ class PageSelect(PageInstaller):
             self.bmp_item.SetBitmap(None)
         self.bmp_item.Thaw()
 
-        # these prefixes are added here instead of in a tooltip
-        # to improve visiblity. Tooltips also don't show up in
-        # disabled items so we don't lose anything
-        if button.option_type == 'Required':
+        if option.type == "Required":
             prefix = "=== This option is required ===\n\n"
-        elif button.option_type == 'Recommended':
+        elif option.type == "Recommended":
             prefix = "=== This option is recommended ===\n\n"
-        elif button.option_type == 'CouldBeUsable':
+        elif option.type == "CouldBeUsable":
             prefix = "=== This option could result in instability ===\n\n"
-        elif button.option_type == 'NotUsable':
+        elif option.type == "NotUsable":
             prefix = "=== This option cannot be selected ===\n\n"
         else:
             prefix = ""
-        self.text_item.SetValue(prefix + button.option_desc)
+        self.text_item.SetValue(prefix + option.description)
 
     def on_error(self, msg):
-        msg += ("\nPlease ensure the fomod files are correct and "
-                "contact the Wrye Bash Dev Team.")
-        dialog = wx.MessageDialog(self, msg, caption="Warning",
-                                  style=wx.OK | wx.CENTER | wx.ICON_EXCLAMATION)
+        msg += (
+            "\nPlease ensure the fomod files are correct and "
+            "contact the Wrye Bash Dev Team."
+        )
+        dialog = wx.MessageDialog(
+            self, msg, caption="Warning", style=wx.OK | wx.CENTER | wx.ICON_EXCLAMATION
+        )
         dialog.ShowModal()
 
     def on_next(self):
-        answer = {}
+        selection = []
+        for group_sizer, option_buttons in self.group_option_map.iteritems():
+            group = group_sizer.group_object
+            group_selected = [a.option_object for a in option_buttons if a.GetValue()]
+            option_len = len(group_selected)
+            if group.type == "SelectExactlyOne" and option_len != 1:
+                msg = (
+                    'Group "{}" should have exactly 1 option selected '
+                    "but has {}.".format(group.name, option_len)
+                )
+                self.on_error(msg)
+            elif group.type == "SelectAtMostOne" and option_len > 1:
+                msg = (
+                    'Group "{}" should have at most 1 option selected '
+                    "but has {}.".format(group.name, option_len)
+                )
+                self.on_error(msg)
+            elif group.type == "SelectAtLeast" and option_len < 1:
+                msg = (
+                    'Group "{}" should have at least 1 option selected '
+                    "but has {}.".format(group.name, option_len)
+                )
+                self.on_error(msg)
+            elif group.type == "SelectAll" and option_len != len(option_buttons):
+                msg = (
+                    'Group "{}" should have all options selected '
+                    "but has only {}.".format(group.name, option_len)
+                )
+                self.on_error(msg)
+            selection.extend(group_selected)
+        return selection
 
-        for group_sizer, options in self.group_option_map.iteritems():
-            group_id = group_sizer.group_id
-            group_name = group_sizer.group_name
-            group_type = group_sizer.group_type
-            answer[group_id] = [a.option_id for a in options if a.GetValue()]
-
-            option_len = len(answer[group_id])
-            if group_type == 'SelectExactlyOne' and option_len != 1:
-                msg = ("Group \"{}\" should have exactly 1 option selected "
-                       "but has {}.".format(group_name, option_len))
-                self.on_error(msg)
-            elif group_type == 'SelectAtMostOne' and option_len > 1:
-                msg = ("Group \"{}\" should have at most 1 option selected "
-                       "but has {}.".format(group_name, option_len))
-                self.on_error(msg)
-            elif group_type == 'SelectAtLeast' and option_len < 1:
-                msg = ("Group \"{}\" should have at least 1 option selected "
-                       "but has {}.".format(group_name, option_len))
-                self.on_error(msg)
-            elif group_type == 'SelectAll' and option_len != len(options):
-                msg = ("Group \"{}\" should have all options selected "
-                       "but has only {}.".format(group_name, option_len))
-                self.on_error(msg)
-
-        self.parent.parser.send(answer)
+    def select(self, selection):
+        for button_list in self.group_option_map.itervalues():
+            for button in button_list:
+                if button.option_object in selection:
+                    button.SetValue(True)
 
 
 class PageFinish(PageInstaller):
@@ -465,19 +444,23 @@ class PageFinish(PageInstaller):
         PageInstaller.__init__(self, parent)
 
         sizer_main = wx.FlexGridSizer(3, 1, 10, 10)
-        label_title = wx.StaticText(self, wx.ID_ANY, "Files To Install",
-                                    style=wx.ALIGN_CENTER)
+        label_title = wx.StaticText(
+            self, wx.ID_ANY, "Files To Install", style=wx.ALIGN_CENTER
+        )
         label_title.SetFont(wx.Font(12, wx.DEFAULT, wx.NORMAL, wx.NORMAL, 0, ""))
         sizer_main.Add(label_title, 0, wx.EXPAND)
         text_item = balt.RoTextCtrl(self, autotooltip=False, hscroll=True)
         text_item.SetFont(wx.Font(9, wx.MODERN, wx.NORMAL, wx.NORMAL, 0, ""))
-        files_dict = self.parent._process_fomod_dict(self.parent.parser.collected_files)
+        files_dict = self.parent.parser.files()
         if files_dict:
             text_item.SetValue(self.display_files(files_dict))
         sizer_main.Add(text_item, 1, wx.EXPAND | wx.ALL)
-        self.check_install = balt.checkBox(self, 'Install this package',
-                                           onCheck=self.on_check,
-                                           checked=self.parent.ret.install)
+        self.check_install = balt.checkBox(
+            self,
+            "Install this package",
+            onCheck=self.on_check,
+            checked=self.parent.ret.install,
+        )
         sizer_main.Add(self.check_install, 1, wx.EXPAND | wx.ALL)
 
         sizer_main.AddGrowableRow(1)
@@ -495,13 +478,15 @@ class PageFinish(PageInstaller):
     @staticmethod
     def display_files(file_dict):
         center_char = " -> "
-        final_text = ""
         max_key_len = len(max(file_dict.keys(), key=len))
         max_value_len = len(max(file_dict.values(), key=len))
+        lines = []
         for key, value in file_dict.iteritems():
-            final_text += "{0:<{1}}{2}{3:<{4}}\n".format(value, max_value_len,
-                                                         center_char, key, max_key_len)
-        lines = final_text.split("\n")
+            lines.append(
+                "{0:<{1}}{2}{3:<{4}}".format(
+                    value, max_value_len, center_char, key, max_key_len
+                )
+            )
         lines.sort(key=str.lower)
         final_text = "\n".join(lines)
         return final_text

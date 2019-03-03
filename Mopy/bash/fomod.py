@@ -23,31 +23,10 @@
 # =============================================================================
 
 
-""" Fomod installer
-
-FomodInstaller - the actual class that does all the work. More docs in the docstring
-
-MissingDependency - raised whenever a dependencies tag is not met. Can be used
-                    to provide more info about the dependency to the user
-
-ChainMap - a similar enough implementation to python 3's ChainMap
-
-NestedChainMap - similar to ChainMap, but allows the flattening to affect
-                 a dictionary nested one level deep.
-
-_assert_dependencies - checks if the dependencies tag is met, or raise
-
-_collect_files - collects the files to be installed in a chainmap
-
-_collect_flags - collects the altered flags in a chainmap
-"""
-
 __author__ = "Ganda"
 
 import os
-import uuid
-
-from collections import OrderedDict, MutableMapping
+from collections import Sequence
 from distutils.version import LooseVersion
 from xml.etree import ElementTree as etree
 
@@ -55,552 +34,307 @@ from .bolt import Path
 from .load_order import cached_is_active
 
 
-class MissingDependency(Exception):
-    """
-    Exception raised whenever there is a missing dependency
-    in a dependency network related element container.
-    """
-    def __init__(self, type_, expected, actual):
-        msg = type_ + " dependency not met. "
-        if type_ == 'Version':
-            msg += "Game version is " + actual
-            msg += ", " + expected + " or newer is required."
-        elif type_ == 'File':
-            msg += actual + " should be " + expected + "."
-        elif type_ == "Flag":
-            msg += "Expected value of " + expected
-            msg += " instead of " + actual
-        else:
-            raise ValueError('Unexpected dependency type.')
-        super(MissingDependency, self).__init__(self, msg)
+class FailedCondition(Exception):
+    pass
 
 
-class ChainMap(MutableMapping):
-    def __init__(self, *maps):
-        '''Initialize a ChainMap by setting *maps* to the given mappings.
-        If no mappings are provided, a single empty dictionary is used.
-        '''
-        self.maps = list(maps) or [{}]  # always at least one map
-
-    def __missing__(self, key):
-        raise KeyError(key)
+class InstallerPage(Sequence):
+    def __init__(self, installer, page):
+        self._installer = installer
+        self._object = page
+        self._group_list = installer._order_list(
+            [
+                InstallerGroup(installer, group)
+                for group in page.findall("optionalFileGroups/*")
+            ],
+            page.get("order", "Ascending"),
+        )
+        self.name = page.get("name")
 
     def __getitem__(self, key):
-        for mapping in self.maps:
-            try:
-                return mapping[key]
-            except KeyError:
-                pass
-        return self.__missing__(key)
-
-    def get(self, key, default=None):
-        return self[key] if key in self else default
+        return self._group_list[key]
 
     def __len__(self):
-        return len(set().union(*self.maps))
-
-    def __iter__(self):
-        d = {}
-        for mapping in reversed(self.maps):
-            d.update(mapping)
-        return iter(d)
-
-    def __setitem__(self, key, value):
-        self.maps[0][key] = value
-
-    def __delitem__(self, key):
-        try:
-            del self.maps[0][key]
-        except KeyError:
-            raise KeyError(
-                    'Key not found in the first mapping: {!r}'.format(key))
+        return len(self._group_list)
 
 
-class _NestedChainMap(ChainMap):
-    """
-    Subclass of stdlib's ChainMap that allows chaining nested dictionaries
-    one level deep only.
-    """
+class InstallerGroup(Sequence):
+    def __init__(self, installer, group):
+        self._installer = installer
+        self._object = group
+        self._option_list = installer._order_list(
+            [
+                InstallerOption(installer, option)
+                for option in group.findall("plugins/*")
+            ],
+            group.get("order", "Ascending"),
+        )
+        self.name = group.get("name")
+        self.type = group.get("type")
+
     def __getitem__(self, key):
-        values = []
-        for mapping in self.maps:
-            try:
-                values.append(mapping[key])
-            except KeyError:
-                pass
+        return self._option_list[key]
 
-        if not values:
-            raise KeyError(key)
-
-        if not isinstance(values[0], dict):
-            return values[0]
-        result = {}
-        for value in reversed(values):
-            if isinstance(value, dict):
-                result.update(value)
-        return result
+    def __len__(self):
+        return len(self._option_list)
 
 
-def _assert_dependencies(depend, flag_states, dest=None, game_version=None):
-    """
-    Runs through all dependencies in **depend** and if it is found to be
-    lacking, MissingDependency is raised. **And** operators are shortcut
-    while **Or** operators must be looked at all the way.
-
-    Anything that the user doesn't provide is assumed to be met.
-    """
-    if depend is None:
-        return
-    operator = depend.get('operator', 'And')
-
-    checks = depend.findall('*')
-    missed_dep_num = 0
-
-    for check in checks:
-        missed_dep = ()
-
-        if check.tag == 'gameDependency':
-            if game_version is None:
-                continue
-            if LooseVersion(game_version) < LooseVersion(check.get('version')):
-                missed_dep = ('Version', check.get('version'), game_version)
-                missed_dep_num += 1
-
-        elif check.tag == 'fileDependency':
-            if dest is None:
-                continue
-            else:
-                file_state = os.path.exists(os.path.join(dest.s,
-                                                         check.get('file')))
-                if check.get('state') == 'Missing' and file_state:
-                    missed_dep = ('File', 'missing', check.get('file'))
-                    missed_dep_num += 1
+class InstallerOption(object):
+    def __init__(self, installer, option):
+        self._installer = installer
+        self._object = option
+        self.name = option.get("name")
+        self.description = option.findtext("description", "").strip()
+        image = option.find("image")
+        if image is not None:
+            self.image = image.get("path")
+        else:
+            self.image = ""
+        type_elem = option.find("typeDescriptor/type")
+        if type_elem is not None:
+            self.type = type_elem.get("name")
+        else:
+            default = option.find("typeDescriptor/dependencyType/defaultType").get(
+                "name"
+            )
+            patterns = option.findall("typeDescriptor/dependencyType/patterns/*")
+            for pattern in patterns:
+                try:
+                    self._installer._test_conditions(pattern.find("dependencies"))
+                except FailedCondition:
+                    pass
                 else:
-                    is_active = cached_is_active(Path(check.get('file')))
-                    if check.get('state') == 'Active' and not is_active:
-                        missed_dep = ('File',
-                                      check.get('state').lower(),
-                                      check.get('file'))
-                        missed_dep_num += 1
-                    elif check.get('state') == 'Inactive' and is_active:
-                        missed_dep = ('File',
-                                      check.get('state').lower(),
-                                      check.get('file'))
-                        missed_dep_num += 1
-
-        elif check.tag == 'flagDependency':
-            if check.get('value') != flag_states.get(check.get('flag'), ''):
-                missed_dep = ('Flag',
-                              check.get('value'),
-                              flag_states.get(check.get('flag'), ''))
-                missed_dep_num += 1
-
-        elif check.tag == 'dependencies':
-            _assert_dependencies(check, flag_states, dest, game_version)
-
-        # short-circuiting
-        if operator == 'And' and missed_dep:
-            raise MissingDependency(*missed_dep)
-
-    if operator == 'Or' and missed_dep_num == len(checks):
-        raise MissingDependency(*missed_dep)
+                    self.type = pattern.find("type").get("name")
+                    break
+            else:
+                self.type = default
 
 
-def _collect_files(file_list, collected_files):
-    """
-    Collects all files from **file_list** and adds them to **collected_files**
-    chain mapping. If **file_list** is ``None``, add an empty dict anyway to
-    keep parity among install steps (no need to track which install steps added
-    files this way).
-    """
-    file_dict = {}
+class PageInfo(object):
+    def __init__(self, page, options):
+        self.page = page
+        self.options = options
 
-    if file_list is not None:
-        items = file_list.findall('*')
 
-        for item in items:
-            source = item.get('source')
+class FileInfo(object):
+    def __init__(self, source, destination, priority):
+        self.source = source
+        self.destination = destination
+        self.priority = priority
+
+    @classmethod
+    def process_files(cls, files_elem, file_list):
+        result = []
+        for file_object in files_elem.findall("*"):
+            print etree.tostring(file_object)
+            source = file_object.get("source")
             if source.endswith(("/", "\\")):
                 source = source[:-1]
-            dest = item.get('destination', '')
-            prio = item.get('priority', '0')
-            prio_dict = file_dict.get(prio, {})
-            if item.tag == "file" and (not dest or dest.endswith(("/", "\\"))):
+            source = Path(source)
+            destination = file_object.get("destination", None)
+            if destination is None:  # omitted destination
+                destination = source
+            elif file_object.tag == "file" and (
+                not destination or destination.endswith(("/", "\\"))
+            ):
                 # if empty or with a trailing slash then dest refers
                 # to a folder. Post-processing to add the filename to the
                 # end of the path.
-                dest = Path(dest).join(Path(source).tail).s
-            prio_dict[source] = dest
-            file_dict[prio] = prio_dict
-
-    collected_files.maps.insert(0, file_dict)
-
-
-def _collect_flags(flag_list, flag_states):
-    """
-    Much like ``_collect_files`` above, except with flags.
-    """
-    flag_dict = {}
-    if flag_list is not None:
-        flags = flag_list.findall('*')
-        for flag in flags:
-            flag_dict[flag.get('name')] = flag.text or ''
-    flag_states.maps.insert(0, flag_dict)
-
-
-def _explicit_list(root):
-    """
-    Very simply, return a list of all elements below **root**,
-    excluding comments.
-    """
-    if root is None:
-        return []
-    return root.findall('*')
-
-
-def _ordered_list(root):
-    """
-    Returns a list of all element with an attribute ``"name"`` under root
-    which must contain an attribute ``"order"`` which determines the order
-    of the list.
-    """
-    if root is None:
-        return []
-    order = root.get('order', 'Ascending')
-    if order == 'Explicit':
-        return _explicit_list(root)
-    elif order == 'Ascending':
-        reverse = False
-    else:
-        reverse = True
-    return sorted(root.findall('*'),
-                  key=lambda x: x.get('name'),
-                  reverse=reverse)
+                destination = Path(destination).join(Path(source).tail)
+            else:
+                # destination still needs normalizing
+                destination = Path(destination)
+            priority = int(file_object.get("priority", "0"))
+            print source, destination, priority
+            for fname in file_list:
+                if fname.lower() == source.s.lower():  # it's a file
+                    result.append(cls(source, destination, priority))
+                elif fname.lower().startswith(source.s.lower()):  # it's a folder
+                    source_len = len(source)
+                    fdest = destination.s + fname[source_len:]
+                    if fdest.startswith(os.sep):
+                        fdest = fdest[1:]
+                    result.append(cls(Path(fname), Path(fdest), priority))
+        return result
 
 
 class FomodInstaller(object):
-    """
-    Creates an installer for the fomod in **source**.
+    def __init__(self, root, file_list, dst_path, game_version):
+        self.tree = etree.parse(root)
+        self.fomod_name = self.tree.findtext("moduleName", "").strip()
+        self.file_list = file_list
+        self.dst_path = dst_path
+        self.game_version = game_version
+        self._current_page = None
+        self._previous_pages = []
+        self._has_finished = False
 
-    **dest** should be the target destination directory where the mod will be
-    installed and **game_version** the game version. These three arguments are
-    all optional.
+    def start(self):
+        root_conditions = self.tree.find("moduleDependencies")
+        if root_conditions is not None:
+            self._test_conditions(root_conditions)
+        first_page = self.tree.find("installSteps/installStep")
+        if first_page is None:
+            return None
+        self._current_page = InstallerPage(self, first_page)
+        return self._current_page
 
-    If **dest** is not provided, all *fileDependency* tags are assumed to be
-    met (meaning it will be ignored and never raise `MissingDependency`).
-    The same can be applied to **game_version** and *gameDependency*.
-
-    The following pseudo-code illustrates basic usage::
-
-        >>> from ... import FomodInstaller, MissingDependency
-        >>> fomod = 'path/to/fomod'
-        >>> target = 'path/to/target'
-        >>> game_version = '1.0.0'
-        >>> installer = FomodInstaller(fomod, target, game_version)
-        >>> # prime it (checking for dependencies, first item collection, etc.)
-        >>> try:
-        ...     installer.send(None)
-        ... except MissingDependency:
-        ...     # handle missing dependency
-        ...
-        >>> while True:
-        ...     step = next(installer)
-        ...     # check if finished
-        ...     if is_finished(step):
-        ...         break
-        ...     # process info in step
-        ...     # make group and plugin choices
-        ...     if user_requested(previous_step):
-        ...         # if you need to go back to a previous step
-        ...         # just send this dict as answer
-        ...         installer.send({'previous_step': True})
-        ...     else:
-        ...         # when you're done processing, send the resulting answer
-        ...         installer.send(answer)
-        ...
-        >>> # whenever the loop exits the installer is done
-
-    When the installer is primed you should always check for missing
-    dependencies on *moduleDependencies* and handle the exception in some way.
-
-    If any exception is raised by this object, the installer is completely
-    stopped and considered finished. You'll need to restart the installer by
-    re-instancing this class.
-
-    The example loop provides you with a ``step`` variable. This variable is a
-    dictionary that holds all the required info for each installation step.
-    An example of this::
-
-        {'name': 'Step Name',
-         'groups': [{'name': 'Group Name',
-                     'id': 'Unique Group ID',
-                     'type': 'Group Type',
-                     'plugins': [{'name': 'Plugin Name',
-                                  'id': 'Unique Plugin ID',
-                                  'description': 'Plugin Description',
-                                  'image': 'path/to/plugin/image.png',
-                                  'type': 'Plugin Type'},
-                                 ...]}
-                    ...]}
-
-    The user's choices should be comunicated through the ``send`` method of the
-    installer.
-
-    To request a previous step the answer should take the form of the dict::
-
-        {'previous_step': True}
-
-    Be aware that the installer will interpret it a request for a previous step
-    whenever that specific mapping is included in the answer, regardless of
-    other content.
-
-    To answer with the user's choices of plugins, a dictionary of this form
-    should be sent::
-
-        {'Group ID': ['Plugin ID', 'Plugin ID', ...],
-         ...}
-
-    With each ``id`` corresponding to a user's choice (or in the case of group
-    ID, the group in which the choice is present). Care should be taken for
-    group and plugin types.
-
-    The mod's metadata can be accessed through several properties of the
-    installer. The properties `FomodInstaller.flag_states` and
-    `FomodInstaller.collected_files` can be accessed at any time before, during or
-    after the installation process to keep track of flag and file changes,
-    respectively.
-    """
-    def __init__(self, conf_path, dest=None, game_version=None):
-        # read metadata
-        conf_tree = etree.parse(conf_path)
-        self.fomod_name = conf_tree.findtext('moduleName', '').strip()
-
-        # setup the installer
-        self.gen = self._installer(conf_tree, dest, game_version)
-        self.send = self.gen.send
-
-        # setup flags and files chain maps
-        self._flag_states = ChainMap()
-        self._collected_files = _NestedChainMap()
-        self._collected_files_cfi = _NestedChainMap()  # for conditionalfileinstalls
-
-    @property
-    def collected_files(self):
-        """
-        A dictionary with the current mapping of
-        ("file/folder source": "destination").
-        """
-        map_copy = _NestedChainMap(
-            *self._collected_files_cfi.maps + self._collected_files.maps
+    def next_(self, selection):
+        if self._has_finished or self._current_page is None:
+            return None
+        sort_list = [option for group in self._current_page for option in group]
+        sorted_selection = sorted(selection, key=sort_list.index)
+        self._previous_pages.append(PageInfo(self._current_page, sorted_selection))
+        ordered_pages = self._order_list(
+            self.tree.findall("installSteps/installStep"),
+            self.tree.find("installSteps").get("order", "Ascending"),
         )
-        sorted_keys = sorted(map_copy.keys(), reverse=True)
-        final = ChainMap()
-        for key in sorted_keys:
-            final.maps.append(map_copy[key])
-        return dict(final)
-
-    def __iter__(self):
-        return self.gen
-
-    def next(self):
-        return next(self.gen)
-
-    def _installer(self, root, dest, game_version):
-        """
-        install steps should be processed in a "x yield x/yield" pattern
-
-        handle metadata in init.
-
-        -> start
-        assert dependencies are ok (raise MissingDependencies otherwise) ...
-        collect requiredInstallFiles ...
-        yield
-        install_step_list = ...
-        index = 0
-        while True:
+        current_index = ordered_pages.index(self._current_page._object)
+        for page in ordered_pages[current_index + 1 :]:
             try:
-                while True:
-                    index += 1
-                    if install_step_is_visible(install_step_list[index], ...):
-                        break
-            except IndexError:
-                # when install steps are over
-                process conditionalFileInstalls ...
-                answer = yield {'finished': True}
-                yield
+                conditions = page.find("visible")
+                if conditions is not None:
+                    self._test_conditions(conditions)
+            except FailedCondition:
+                pass
             else:
-                answer = yield install_step_list[index]
-                # stop here so .send() returns nothing and loop can work.
-                yield
-            if user_requested_previous_step:
-                index = previous_index
-                # pop off latest flags and files
-                continue
-            previous_index = index
-            process answer ...
-        -> end
-        """
+                self._current_page = InstallerPage(self, page)
+                return self._current_page
+        else:
+            self._has_finished = True
+            self._current_page = None
+        return None
 
-        _assert_dependencies(root.find('moduleDependencies'),
-                             self._flag_states,
-                             dest,
-                             game_version)
+    def previous(self):
+        self._has_finished = False
+        try:
+            info = self._previous_pages.pop()
+            self._current_page = info.page
+            return info.page, info.options
+        except IndexError:
+            self._current_page = None
+            return None
 
-        _collect_files(root.find('requiredInstallFiles'),
-                       self._collected_files)
-        # stop here to allow user to catch raised missing dependencies
-        yield
-
-        step_list = _ordered_list(root.find('installSteps'))
-        previous_index = [0]
-        index = -1
-        while True:
-            # get next visible index
+    def files(self):
+        required_files = []
+        required_files_elem = self.tree.find("requiredInstallFiles")
+        if required_files_elem is not None:
+            required_files = FileInfo.process_files(required_files_elem, self.file_list)
+        user_files = []
+        selected_options = [
+            option._object for info in self._previous_pages for option in info.options
+        ]
+        for option in selected_options:
+            option_files = option.find("files")
+            if option_files is not None:
+                user_files.extend(FileInfo.process_files(option_files, self.file_list))
+        conditional_files = []
+        for pattern in self.tree.findall("conditionalFileInstalls/patterns/pattern"):
+            conditions = pattern.find("dependencies")
+            files = pattern.find("files")
             try:
-                while True:
-                    index += 1
-                    try:
-                        _assert_dependencies(step_list[index].find('visible'),
-                                             self._flag_states,
-                                             dest,
-                                             game_version)
-                    except MissingDependency:
-                        pass
-                    else:
-                        break
-            except IndexError:
-                # when install steps are over
-                # process conditionalFileInstalls
-                pattern_list = _explicit_list(root.find('conditionalFile'
-                                                        'Installs/patterns'))
-                for pattern in pattern_list:
-                    try:
-                        _assert_dependencies(pattern.find('dependencies'),
-                                             self._flag_states,
-                                             dest,
-                                             game_version)
-                    except MissingDependency:
-                        pass
-                    else:
-                        _collect_files(pattern.find('files'),
-                                       self._collected_files_cfi)
-                answer = yield {'finished': True}
-                yield
+                self._test_conditions(conditions)
+            except FailedCondition:
+                pass
             else:
+                conditional_files.extend(FileInfo.process_files(files, self.file_list))
+        file_dict = {}  # dst -> src
+        priority_dict = {}  # dst -> priority
+        for info in required_files + user_files + conditional_files:
+            if info.destination in priority_dict:
+                if priority_dict[info.destination] > info.priority:
+                    continue
+                del file_dict[info.destination]
+            file_dict[info.destination] = info.source
+            priority_dict[info.destination] = info.priority
+        # return everything in strings
+        return {a.s: b.s for a, b in file_dict.iteritems()}
 
-                # id -> plugin element dictionary
-                id_dict = {}
-
-                # step processing
-                step_dict = {'name': step_list[index].get('name'), 'groups': []}
-                groups = _ordered_list(step_list[index].find('optionalFileGroups'))
-
-                # group processing
-                for group in groups:
-                    group_dict = {'name': group.get('name'),
-                                  'type': group.get('type'),
-                                  'id': str(uuid.uuid4()),
-                                  'plugins': []}
-                    plugins = _ordered_list(group.find('plugins'))
-
-                    # plugin processing
-                    for plugin in plugins:
-                        plugin_dict = {}
-                        plugin_dict['id'] = str(uuid.uuid4())
-                        plugin_dict['name'] = plugin.get('name')
-                        description = plugin.findtext('description', '').strip()
-                        plugin_dict['description'] = description
-
-                        image = plugin.find('image')
-                        if image is not None:
-                            plugin_dict['image'] = image.get('path')
-                        else:
-                            plugin_dict['image'] = ''
-
-                        type_elem = plugin.find('typeDescriptor')
-                        plugin_type = type_elem.find('type')
-                        if plugin_type is not None:
-                            plugin_dict['type'] = plugin_type.get('name')
-                        else:
-                            default_type = type_elem.find('dependencyType/de'
-                                                          'faultType').get('name')
-                            patterns = type_elem.find('dependencyType/patterns')
-                            pattern_list = _explicit_list(patterns)
-                            for pattern in pattern_list:
-                                try:
-                                    _assert_dependencies(
-                                        pattern.find('dependencies'),
-                                        self._flag_states,
-                                        dest,
-                                        game_version)
-                                except MissingDependency:
-                                    pass
-                                else:
-                                    plugin_dict['type'] = \
-                                        pattern.find('type').get('name')
-                                    break
-                            else:
-                                plugin_dict['type'] = default_type
-
-                        group_dict['plugins'].append(plugin_dict)
-                        id_dict[plugin_dict['id']] = plugin
-
-                    step_dict['groups'].append(group_dict)
-
-                answer = yield step_dict
-                yield
-
-            # check if previous step was requested
-            if answer.pop('previous_step', False):
-                try:
-                    index = previous_index.pop() - 1
-                except IndexError:
-                    index = -1
-                # pop off latest flags and files
-                # no need to check if last step added any of this
-                # because an empty dict will be added to the chainmap anyway
-                if len(self._flag_states.maps) > 1:
-                    self._flag_states.maps.pop(0)
-                if len(self._collected_files.maps) > 2:  # first + reqinstfiles
-                    self._collected_files.maps.pop(0)
+    def _flags(self):
+        flag_dict = {}
+        flags_list = [
+            option._object.find("conditionFlags")
+            for info in self._previous_pages
+            for option in info.options
+        ]
+        for flags in flags_list:
+            if flags is None:
                 continue
-            previous_index.append(index)
+            for flag in flags.findall("flag"):
+                flag_name = flag.get("name")
+                flag_value = flag.text
+                flag_dict[flag_name] = flag_value
+        return flag_dict
 
-            # sort groups and plugins in answer
-            def from_id(dict_, type_, id_):
-                """
-                Grabs group/plugin from step_dict via id.
-                """
-                return next(a for a in dict_[type_] if a['id'] == id_)
+    def _test_file_condition(self, file_name, file_type):
+        file_path = self.dst_path.join(file_name)
+        if not file_path.exists():
+            actual_type = "Missing"
+        else:
+            is_active = cached_is_active(file_name)
+            if is_active:
+                actual_type = "Active"
+            else:
+                actual_type = "Inactive"
+        if actual_type != file_type:
+            raise FailedCondition(
+                "File {} should be {} but is {} intead.".format(
+                    file_name, file_type, actual_type
+                )
+            )
 
-            def id_sort(dict_, type_, id_):
-                """
-                Sorts out plugins/groups via id.
-                """
-                elem = from_id(dict_, type_, id_)
-                return dict_[type_].index(elem)
+    def _test_flag_condition(self, flag_name, flag_value):
+        actual_value = self._flags().get(flag_name, None)
+        if actual_value != flag_value:
+            raise FailedCondition(
+                "Flag {} was expected to have {} but has {} instead.".format(
+                    flag_name, flag_value, actual_value
+                )
+            )
 
-            for group_id in answer:
-                group = from_id(step_dict, 'groups', group_id)
-                answer[group_id] = list(set(answer[group_id]))
-                answer[group_id] = sorted(answer[group_id],
-                                          key=lambda x: id_sort(group,
-                                                                'plugins',
-                                                                x))
-            answer = OrderedDict(sorted(answer.items(),
-                                        key=lambda x: id_sort(step_dict,
-                                                              'groups',
-                                                              x[0])))
+    def _test_version_condition(self, version):
+        game_version = LooseVersion(self.game_version)
+        version = LooseVersion(version)
+        if game_version < version:
+            raise FailedCondition(
+                "Game version is {} but {} is required.".format(game_version, version)
+            )
 
-            # collect files and flags
-            step_file_chain = _NestedChainMap()
-            step_flag_chain = ChainMap()
-            for plugin_ids in answer.values():
-                for plugin_id in plugin_ids:
-                    _collect_files(id_dict[plugin_id].find('files'),
-                                   step_file_chain)
-                    _collect_flags(id_dict[plugin_id].find('conditionFlags'),
-                                   step_flag_chain)
-            self._collected_files.maps.insert(0, dict(step_file_chain))
-            self._flag_states.maps.insert(0, dict(step_flag_chain))
+    def _test_conditions(self, conditions):
+        op = conditions.get("operator", "And")
+        failed = []
+        condition_list = conditions.findall("*")
+        for condition in condition_list:
+            try:
+                if condition.tag == "fileDependency":
+                    file_name = condition.get("file")
+                    file_type = condition.get("state")
+                    self._test_file_condition(file_name, file_type)
+                elif condition.tag == "flagDependency":
+                    flag_name = condition.get("flag")
+                    flag_value = condition.get("value")
+                    self._test_flag_condition(flag_name, flag_value)
+                elif condition.tag == "gameDependency":
+                    version = condition.get("version")
+                    self._test_version_condition(version)
+                elif condition.tag == "dependencies":
+                    self._test_conditions(condition)
+            except FailedCondition as exc:
+                failed.extend([a for a in str(exc).splitlines()])
+                if op == "And":
+                    raise FailedCondition("\n".join(failed))
+        if op == "Or" and len(failed) == len(condition_list):
+            raise FailedCondition("\n".join(failed))
 
+    @staticmethod
+    def _order_list(unordered_list, order):
+        if order == "Explicit":
+            return unordered_list
+        elif order == "Ascending":
+            return sorted(unordered_list, key=lambda x: x.name)
+        elif order == "Descending":
+            return sorted(unordered_list, key=lambda x: x.name, reverse=True)
+        else:
+            raise ValueError(
+                "Arguments are incorrect: {}, {}".format(unordered_list, order)
+            )
