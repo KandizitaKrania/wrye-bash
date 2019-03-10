@@ -697,7 +697,8 @@ class xSECosave(_ACosave):
 
     def load_chunks(self, ins):
         loaded_chunks = []
-        for x in xrange(self.cosave_header.num_plugins):
+        my_header = self.cosave_header # type: _xSEHeader
+        for x in xrange(my_header.num_plugin_chunks):
             loaded_chunks.append(self.chunk_type(ins))
         return loaded_chunks
 
