@@ -59,7 +59,9 @@ def parse_config(args):
         default_dict[key] = value
     if not args.no_config:
         with open(CONFIG_FILE, "w") as conf_file:
-            file_dict.update({"dropbox_" + a: b for a, b in default_dict.items()})
+            file_dict.update(
+                {"dropbox_" + a: b for a, b in default_dict.items() if a != "branch"}
+            )
             json.dump(file_dict, conf_file, indent=2, separators=(",", ": "))
     return default_dict
 
