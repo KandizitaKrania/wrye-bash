@@ -771,7 +771,7 @@ class Save_StatObse(AppendableLink, OneItemLink):
     def Execute(self):
         with balt.BusyCursor():
             log = bolt.LogFile(StringIO.StringIO())
-            cosave = self._selected_info.get_cosave()
+            cosave = self._selected_info.get_xse_cosave()
             if cosave is not None:
                 cosave.dump_cosave(log, self._selected_info.header.masters)
         text = log.out.getvalue()

@@ -967,14 +967,10 @@ from .cosaves import PluggyCosave
 from . import cosaves
 
 class SaveInfo(FileInfo):
-    _cosave_type = None  # type: cosaves.xSECosave
-    _cached_cosave = None
+    # The xSE cosave that may come with this save file. Lazily initialized.
+    _xse_cosave = None
 
-    @property
-    def cosave_type(self):
-        if self._cosave_type is None:
-            SaveInfo._cosave_type = cosaves.get_cosave_type(bush.game.fsName)
-        return self._cosave_type
+    def cosave_type(self): return cosaves.get_cosave_type(bush.game.fsName)
 
     def getFileInfos(self): return saveInfos
 
@@ -1020,7 +1016,7 @@ class SaveInfo(FileInfo):
             pluggy.mapMasters(masterMap)
             pluggy.safeSave()
         #--OBSE/SKSE file?
-        cosave = self.get_cosave()
+        cosave = self.get_xse_cosave()
         if cosave is not None:
             cosave.map_masters(masterMap)
             cosave.write_cosave_safe()
@@ -1041,19 +1037,20 @@ class SaveInfo(FileInfo):
         save_paths.extend(CoSaves.get_new_paths(*save_paths[0]))
         return save_paths
 
-    def get_cosave(self):
+    def get_xse_cosave(self):
         """:rtype: cosaves.xSECosave"""
-        if self._cached_cosave is None:
+        if self._xse_cosave is None:
             cosave_path = self.get_se_cosave_path()
             if cosave_path is None: return None
             try:
-                self._cached_cosave = self.cosave_type(cosave_path)
+                cosave_constructor = self.cosave_type()
+                self._xse_cosave = cosave_constructor(cosave_path)
             except (OSError, IOError, FileError) as e:
                 if isinstance(e, FileError) or (
                     isinstance(e, (OSError, IOError)) and e.errno != errno.ENOENT):
                     deprint(u'Failed to open %s' % cosave_path, traceback=True)
                 return None
-        return self._cached_cosave
+        return self._xse_cosave
 
     def get_se_cosave_path(self):
         if self.cosave_type is None: return None
