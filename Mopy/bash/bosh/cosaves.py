@@ -633,6 +633,27 @@ class ACoSaveFile(object):
     def load_chunks(self, ins):
         pass
 
+    def write_cosave(self, out_path):
+        """
+        Writes this cosave to the specified path. Any changes that have been
+        done to the cosave in-memory will be written out by this.
+
+        :param out_path: The path to write to.
+        """
+
+    def write_cosave_safe(self, out_path=""):
+        """
+        Writes out any in-memory changes that have been made to this cosave to
+        the specified path, first moving it to a temporary location to avoid
+        overwriting the original file if something goes wrong.
+
+        :param out_path: The path to write to. If empty or None, this cosave's
+                         own path is used instead.
+        """
+        out_path = out_path or self.cosave_path
+        self.write_cosave(out_path.temp)
+        out_path.untemp()
+
 class xSECoSave(ACoSaveFile):
     chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
@@ -681,12 +702,6 @@ class xSECoSave(ACoSaveFile):
                     ch.log_chunk(log, ins, save_masters, espMap)
 
     def write_cosave(self, out_path):
-        """
-        Writes this cosave to the specified path. Any changes that have been
-        done to the cosave in-memory will be written out by this.
-
-        :param out_path: The path to write to.
-        """
         mtime = self.cosave_path.mtime # must exist !
         with sio() as buff:
             # We have to update the number of chunks in the header here, since
@@ -700,12 +715,6 @@ class xSECoSave(ACoSaveFile):
         with out_path.open('wb') as out:
             out.write(text)
         out_path.mtime = mtime
-
-    def write_cosave_safe(self):
-        """Write to a tmp file first so if that fails we won't delete the
-        cosave."""
-        self.write_cosave(self.cosave_path.temp)
-        self.cosave_path.untemp()
 
 class PluggyFile(ACoSaveFile):
     """Represents a .pluggy cofile for saves. Used for editing masters list."""
