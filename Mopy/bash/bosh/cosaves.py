@@ -134,6 +134,16 @@ class _AChunk(object):
         :param out: The output stream to write to.
         """
 
+    # TODO(inf) This is a prime target for refactoring in 308+
+    # A lot of it could be auto-calculated
+    def chunk_length(self):
+        """
+        Calculates the length of this chunk, i.e. the length of the data that
+        follows after this chunk's header.
+
+        :return: The calculated length.
+        """
+
     # TODO(inf) Drop the ins parameter once refactoring is done
     # We'll have entirely shifted to loading the chunks inside __init__ by then
     def log_chunk(self, log, ins, save_masters, espmMap):
@@ -163,6 +173,10 @@ class _xSEChunk(_AChunk):
         _pack(out, '=I', self.chunk_length)
         if not self._fully_decoded:
             out.write(self.chunk_data)
+
+    def chunk_length(self):
+        # No need to check _fully_decoded, subclasses *must* override this
+        return len(self.chunk_data)
 
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
         # TODO Will need rewriting now that the MODS record is fully decoded
@@ -262,6 +276,28 @@ class _xSEChunkARVR(_xSEChunk):
                 raise RuntimeError(u'Unknown or unsupported element type %u.' %
                                    element_type)
 
+    def chunk_length(self):
+        # The ones that are always there (3*B, 2*I)
+        total_len = 11
+        if self.chunk_version >= 1:
+            # Every reference is a byte
+            total_len += 4 + len(self.references)
+        # Every element has a byte, and the type is per chunk, not per element
+        element_static_len = 1 + (8 if self.key_type == 1 else 2)
+        total_len += element_static_len * len(self.elements)
+        # The final part varies per element, so we'll have to run through
+        for element in self.elements:
+            element_type = element[1]
+            if element_type == 1:
+                total_len += 8
+            elif element_type == 2:
+                total_len += 4
+            elif element_type == 3:
+                total_len += 4 + len(element[2])
+            elif element_type == 4:
+                total_len += 4
+        return total_len
+
     def log_chunk(self, log, ins, save_masters, espmMap):
         if self.mod_index == 255:
             log(_(u'    Mod :  %02X (Save File)') % self.mod_index)
@@ -329,6 +365,13 @@ class _xSEChunkMODS(_xSEChunk, _Remappable):
             _pack(out, '=H', len(mod_name))
             out.write(mod_name)
 
+    def chunk_length(self):
+        # One byte for the count, a short per mod name (for string length)
+        total_len = 1 + 2 * len(self.mod_names)
+        for mod_name in self.mod_names:
+            total_len += len(mod_name)
+        return total_len
+
     def log_chunk(self, log, ins, save_masters, espmMap):
         log(_(u'    %u loaded mods:') % len(self.mod_names))
         for mod_name in self.mod_names:
@@ -356,6 +399,9 @@ class _xSEChunkSTVR(_xSEChunk):
         _pack(out, '=I', self.string_id)
         _pack(out, '=H', len(self.string_data))
         out.write(self.string_data)
+
+    def chunk_length(self):
+        return 7 + len(self.string_data)
 
     def log_chunk(self, log, ins, save_masters, espmMap):
         log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
@@ -536,8 +582,15 @@ class _xSEPluginChunk(_AChunk):
             else:
                 self.plugin_chunks.append(ch_class(ins))
 
-    def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
+    def chunk_length(self):
+        # Every chunk header has a string of length 4 (type) and two integers
+        # (version and length)
+        total_len = 12 * len(self.plugin_chunks)
+        for plugin_chunk in self.plugin_chunks:
+            total_len += plugin_chunk.chunk_length()
+        return total_len
 
+    def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
         # The chunk type strings are reversed in the cosaves
         chunk_type = unpack_4s(ins)[::-1]
         chunk_class = _xSEChunk
