@@ -29,13 +29,27 @@ renaming of the masters of the xSE plugin chunk itself and of the Pluggy chunk.
 from ..bolt import sio, GPath, decode, encode, unpack_string, unpack_int, \
     unpack_short, unpack_4s, unpack_byte, unpack_str16, struct_pack, \
     struct_unpack, deprint
-from ..exception import FileError
+from ..exception import AbstractError, FileError
 
 
-# Small helper functions for quickly packing and unpacking
+#------------------------------------------------------------------------------
+# Utilities
 def _pack(buff, fmt, *args): buff.write(struct_pack(fmt, *args))
 # TODO(inf) Replace with unpack_many
 def _unpack(ins, fmt, size): return struct_unpack(fmt, ins.read(size))
+
+class _Remappable(object):
+    """Mixin for objects inside cosaves that have to be updated when the names
+    of one or more plugin files referenced in the cosave has been changed."""
+    def remap_plugins(self, plugin_renames):
+        """
+        Remaps the names of relevant plugin entries in this object.
+
+        :param plugin_renames: A dictionary containing the renames: key is the
+                               name of the plugin before the renaming, value is
+                               the name afterwards.
+        """
+        raise AbstractError()
 
 #------------------------------------------------------------------------------
 # Headers
