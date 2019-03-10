@@ -81,6 +81,18 @@ class _AHeader(object):
         """
         out.write(self.savefile_tag)
 
+    def dump_header(self, log, save_masters):
+        """
+        Dumps information from this header into the specified log. The default
+        implementation only writes out a 'Header' heading and a separator.
+
+        :param log: A bolt.Log instance to write to.
+        :param save_masters: A list of the masters of the save file that this
+                             cosave belongs to.
+        """
+        log.setHeader(_(u'%s Header') % self.savefile_tag)
+        log(u'=' * 80)
+
 class _xSEHeader(_AHeader):
     """Header for xSE cosaves."""
     __slots__ = ('format_version', 'se_version', 'se_minor_version',
@@ -104,6 +116,14 @@ class _xSEHeader(_AHeader):
         _pack(out, '=I', self.game_version)
         _pack(out, '=I', self.num_plugin_chunks)
 
+    def dump_header(self, log, save_masters):
+        super(_xSEHeader, self).dump_header(log, save_masters)
+        log(_(u'  Format version:   %08X') % self.format_version)
+        log(_(u'  %s version:      %u.%u') % (self.savefile_tag,
+                                              self.se_version,
+                                              self.se_minor_version))
+        log(_(u'  Game version:     %08X') % self.game_version)
+
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
     savefile_tag = 'PluggySave'
@@ -121,6 +141,11 @@ class _PluggyHeader(_AHeader):
     def write_header(self, out):
         super(_PluggyHeader, self).write_header(out)
         _pack(out, '=I', self._max_supported_version)
+
+    def dump_header(self, log, save_masters):
+        super(_PluggyHeader, self).dump_header(log, save_masters)
+        log(_(u'  Pluggy file format version: %08X') %
+            self._max_supported_version)
 
 #------------------------------------------------------------------------------
 # Chunks
@@ -697,15 +722,7 @@ class xSECosave(_ACosave):
         out_path.mtime = mtime
 
     def dump_cosave(self, log, save_masters):
-        #--Header
-        my_header = self.cosave_header # type: _xSEHeader
-        log.setHeader(_(u'Header'))
-        log(u'=' * 80)
-        log(_(u'  Format version:   %08X') % (my_header.format_version,))
-        log(_(u'  %s version:      %u.%u') % (
-            my_header.savefile_tag, my_header.se_version,
-            my_header.se_minor_version,))
-        log(_(u'  Game version:     %08X') % (my_header.game_version,))
+        self.cosave_header.dump_header(log, save_masters)
         #--Plugins
         for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
             plugin_sig = plugin_ch.plugin_signature
