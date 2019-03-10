@@ -619,7 +619,8 @@ class _PluggyChunk(_AChunk):
 
 #------------------------------------------------------------------------------
 # Files
-class ACoSaveFile(object):
+class _ACosave(object):
+    """The abstract base class for all cosave files."""
     chunk_type = _AChunk
     header_type = _AHeader
     __slots__ = ('cosave_path', 'cosave_header', 'cosave_chunks')
@@ -663,7 +664,8 @@ class ACoSaveFile(object):
                              cosave belongs to.
         """
 
-class xSECoSave(ACoSaveFile):
+class xSECosave(_ACosave):
+    """Represents an xSE cosave, with a .**se extension."""
     chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
     __slots__ = ()
@@ -724,13 +726,13 @@ class xSECoSave(ACoSaveFile):
                 with sio(ch.chunk_data) as ins:
                     ch.log_chunk(log, ins, save_masters, espMap)
 
-class PluggyFile(ACoSaveFile):
-    """Represents a .pluggy cofile for saves. Used for editing masters list."""
+class PluggyCosave(_ACosave):
+    """Represents a Pluggy cosave, with a .pluggy extension."""
     chunk_type = _PluggyChunk
     header_type = _PluggyHeader
 
     def __init__(self, cosave_path):
-        super(PluggyFile, self).__init__(cosave_path)
+        super(PluggyCosave, self).__init__(cosave_path)
         self.version = None
         self._plugins = None
         self.other = None
@@ -837,4 +839,4 @@ def get_cosave_type(game_fsName):
         _xSEHeader.savefile_tag = 'FOSE'
     elif game_fsName == u'FalloutNV':
         _xSEHeader.savefile_tag = 'NVSE'
-    return xSECoSave
+    return xSECosave

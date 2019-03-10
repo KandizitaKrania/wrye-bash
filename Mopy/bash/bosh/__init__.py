@@ -963,7 +963,7 @@ class INIInfo(IniFile):
 
 #------------------------------------------------------------------------------
 from .save_headers import get_save_header_type, SaveFileHeader
-from .cosaves import PluggyFile
+from .cosaves import PluggyCosave
 from . import cosaves
 
 class SaveInfo(FileInfo):
@@ -1014,7 +1014,7 @@ class SaveInfo(FileInfo):
         #--Pluggy file?
         pluggyPath = CoSaves.getPaths(self.abs_path)[0]
         if masterMap and pluggyPath.exists():
-            pluggy = PluggyFile(pluggyPath)
+            pluggy = PluggyCosave(pluggyPath)
             pluggy.load()
             pluggy.mapMasters(masterMap)
             pluggy.safeSave()
@@ -1041,7 +1041,7 @@ class SaveInfo(FileInfo):
         return save_paths
 
     def get_cosave(self):
-        """:rtype: cosaves.xSECoSave"""
+        """:rtype: cosaves.xSECosave"""
         cosave_path = self.get_se_cosave_path()
         if cosave_path is None: return None
         try:
