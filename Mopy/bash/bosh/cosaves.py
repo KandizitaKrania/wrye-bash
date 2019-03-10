@@ -147,8 +147,6 @@ class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     _fully_decoded = False
     __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
-    # TODO(inf) If you're really bored, you can add logic to auto-update the
-    # chunk_length variable
 
     def __init__(self, ins, chunk_type):
         self.chunk_type = chunk_type
@@ -159,7 +157,7 @@ class _xSEChunk(_AChunk):
             self.chunk_data = ins.read(self.chunk_length)
 
     def write_chunk(self, out):
-        # Don't forget to reverse it when writing again
+        # Don't forget to reverse signature when writing again
         _pack(out, '=4s', self.chunk_type[::-1])
         _pack(out, '=I', self.chunk_version)
         _pack(out, '=I', self.chunk_length)
@@ -337,8 +335,7 @@ class _xSEChunkMODS(_xSEChunk, _Remappable):
             log(_(u'     - %s') % mod_name)
 
     def remap_plugins(self, plugin_renames):
-        self.mod_names = [plugin_renames[x] if x in plugin_renames.keys()
-                          else x for x in self.mod_names]
+        self.mod_names = [plugin_renames.get(x, x) for x in self.mod_names]
 
 class _xSEChunkSTVR(_xSEChunk):
     """An STVR (String Variable) record. Only available in OBSE and NVSE. See
@@ -366,6 +363,7 @@ class _xSEChunkSTVR(_xSEChunk):
         log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
         log(u'    ' + _(u'Data:') + u'  %s' % self.string_data)
 
+# TODO(inf) What about pluggy chunks inside xSE cosaves?
 class _xSEPluggyChunk(_xSEChunk):
     def log_chunk(self, log, ins, save_masters, espMap):
         chunkTypeNum, = struct_unpack('=I', self.chunk_type)
@@ -539,7 +537,6 @@ class _xSEPluginChunk(_AChunk):
                 self.plugin_chunks.append(ch_class(ins))
 
     def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
-        # TODO(inf) What about pluggy chunks inside xSE cosaves?
 
         # The chunk type strings are reversed in the cosaves
         chunk_type = unpack_4s(ins)[::-1]
