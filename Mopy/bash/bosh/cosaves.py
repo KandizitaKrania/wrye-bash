@@ -670,6 +670,21 @@ class xSECoSave(ACoSaveFile):
             for chunk in plugin_chunk.plugin_chunks: # TODO avoid scanning all chunks
                 chunk.chunk_map_master(master_renames_dict, plugin_chunk)
 
+    def write_cosave(self, out_path):
+        mtime = self.cosave_path.mtime # must exist !
+        with sio() as buff:
+            # We have to update the number of chunks in the header here, since
+            # that can't be done automatically
+            my_header = self.cosave_header # type: _xSEHeader
+            my_header.num_plugin_chunks = len(self.cosave_chunks)
+            my_header.write_header(buff)
+            for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
+                plugin_ch.write_chunk(buff)
+            text = buff.getvalue()
+        with out_path.open('wb') as out:
+            out.write(text)
+        out_path.mtime = mtime
+
     def logStatObse(self, log, save_masters):
         """Print stats to log."""
         #--Header
@@ -700,21 +715,6 @@ class xSECoSave(ACoSaveFile):
                         chunkTypeNum, ch.chunk_version, ch.chunk_length()))
                 with sio(ch.chunk_data) as ins:
                     ch.log_chunk(log, ins, save_masters, espMap)
-
-    def write_cosave(self, out_path):
-        mtime = self.cosave_path.mtime # must exist !
-        with sio() as buff:
-            # We have to update the number of chunks in the header here, since
-            # that can't be done automatically
-            my_header = self.cosave_header # type: _xSEHeader
-            my_header.num_plugin_chunks = len(self.cosave_chunks)
-            my_header.write_header(buff)
-            for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
-                plugin_ch.write_chunk(buff)
-            text = buff.getvalue()
-        with out_path.open('wb') as out:
-            out.write(text)
-        out_path.mtime = mtime
 
 class PluggyFile(ACoSaveFile):
     """Represents a .pluggy cofile for saves. Used for editing masters list."""
