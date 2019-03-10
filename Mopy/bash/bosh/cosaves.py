@@ -91,7 +91,7 @@ class _AHeader(object):
                              cosave belongs to.
         """
         log.setHeader(_(u'%s Header') % self.savefile_tag)
-        log(u'=' * 80)
+        log(u'=' * 40)
 
 class _xSEHeader(_AHeader):
     """Header for xSE cosaves."""
@@ -727,8 +727,8 @@ class xSECosave(_ACosave):
         #--Plugins
         for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
             plugin_sig = plugin_ch.plugin_signature
-            log.setHeader(_(u'Plugin opcode=%08X chunkNum=%u') % (
-                plugin_sig, len(plugin_ch.chunks),))
+            log.setHeader(_(u'Plugin signature: %s, Total chunks: %u') % (
+                decode(plugin_sig), len(plugin_ch.chunks),))
             log(u'=' * 80)
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 80)

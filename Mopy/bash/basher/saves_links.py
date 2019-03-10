@@ -776,7 +776,9 @@ class Save_StatObse(AppendableLink, OneItemLink):
                 cosave.dump_cosave(log, self._selected_info.header.masters)
         text = log.out.getvalue()
         log.out.close()
-        self._showLog(text, title=self._selected_item.s, fixedFont=False)
+        if cosave is not None:
+            self._showLog(text, title=cosave.cosave_path.tail.s,
+                          fixedFont=False)
 
 #------------------------------------------------------------------------------
 class Save_Unbloat(OneItemLink):
