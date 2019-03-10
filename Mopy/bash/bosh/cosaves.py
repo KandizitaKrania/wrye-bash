@@ -582,6 +582,14 @@ class _xSEPluginChunk(_AChunk):
             else:
                 self.chunks.append(ch_class(ins))
 
+    def write_chunk(self, out):
+        # Don't forget to reverse signature when writing again
+        _pack(out, '=4s', self.plugin_signature[::-1])
+        _pack(out, '=I', len(self.chunks))
+        _pack(out, '=I', self.chunk_length())
+        for chunk in self.chunks:
+            chunk.write_chunk(out)
+
     def chunk_length(self):
         # Every chunk header has a string of length 4 (type) and two integers
         # (version and length)
@@ -673,6 +681,12 @@ class xSECoSave(ACoSaveFile):
                     ch.log_chunk(log, ins, save_masters, espMap)
 
     def write_cosave(self, out_path):
+        """
+        Writes this cosave to the specified path. Any changes that have been
+        done to the cosave in-memory will be written out by this.
+
+        :param out_path: The path to write to.
+        """
         mtime = self.cosave_path.mtime # must exist !
         with sio() as buff:
             # We have to update the number of chunks in the header here, since
@@ -680,15 +694,8 @@ class xSECoSave(ACoSaveFile):
             my_header = self.cosave_header # type: _xSEHeader
             my_header.num_plugin_chunks = len(self.cosave_chunks)
             my_header.write_header(buff)
-            #--Plugins
             for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
-                _pack(buff, '=I', plugin_ch.plugin_signature)
-                _pack(buff, '=I', len(plugin_ch.chunks))
-                _pack(buff, '=I', plugin_ch.chunk_length())
-                for chunk in plugin_ch.chunks: # type: _xSEChunk
-                    buff.write(chunk.chunk_type)
-                    _pack(buff, '=2I', chunk.chunk_version, chunk.chunk_length)
-                    buff.write(chunk.chunk_data)
+                plugin_ch.write_chunk(buff)
             text = buff.getvalue()
         with out_path.open('wb') as out:
             out.write(text)
