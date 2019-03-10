@@ -588,8 +588,6 @@ class _xSEPluggyChunk(_xSEChunk):
 class _xSEPluginChunk(_AChunk):
     """A single xSE chunk, composed of _xSEChunk (and potentially
     _xSEPluggyChunk) objects."""
-    _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
-    _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
     __slots__ = ('plugin_signature', 'chunks')
 
     def __init__(self, ins):
@@ -599,9 +597,7 @@ class _xSEPluginChunk(_AChunk):
         unpack_int(ins) # discard the size, we'll generate it when writing
         self.chunks = []
         for x in xrange(num_chunks):
-            ch_class, ch_type = self._get_chunk_type(ins,
-                                                     self._xse_signature,
-                                                     self._pluggy_signature)
+            ch_class, ch_type = self._get_chunk_type(ins)
             # If ch_type is None, that means we don't have to pass it on
             if ch_type:
                 self.chunks.append(ch_class(ins, ch_type))
@@ -624,7 +620,8 @@ class _xSEPluginChunk(_AChunk):
             total_len += chunk.chunk_length()
         return total_len
 
-    def _get_chunk_type(self, ins, xse_signature, pluggy_signature):
+    @staticmethod
+    def _get_chunk_type(ins):
         # The chunk type strings are reversed in the cosaves
         chunk_type = unpack_4s(ins)[::-1]
         chunk_class = _xSEChunk
@@ -694,6 +691,8 @@ class xSECosave(_ACosave):
     """Represents an xSE cosave, with a .**se extension."""
     chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
+    _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
+    _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     __slots__ = ()
 
     def load_chunks(self, ins):
@@ -840,18 +839,18 @@ class PluggyCosave(_ACosave):
 def get_cosave_type(game_fsName):
     """:rtype: type"""
     if game_fsName == u'Oblivion':
+        xSECosave._pluggy_signature = 0x2330
         _xSEHeader.savefile_tag = 'OBSE'
-        _xSEPluginChunk._pluggy_signature = 0x2330
     elif game_fsName == u'Skyrim':
+        xSECosave._xse_signature = 0x0
         _xSEHeader.savefile_tag = 'SKSE'
-        _xSEPluginChunk._xse_signature = 0x0
     elif game_fsName == u'Skyrim Special Edition':
+        xSECosave._xse_signature = 0x0
         _xSEHeader.savefile_tag = 'SKSE'
-        _xSEPluginChunk._xse_signature = 0x0
         _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout4':
+        xSECosave._xse_signature = 0x0
         _xSEHeader.savefile_tag = 'F4SE'
-        _xSEPluginChunk._xse_signature = 0x0
         _xSEChunk._espm_chunk_type = {'SDOM', 'DOML'}
     elif game_fsName == u'Fallout3':
         _xSEHeader.savefile_tag = 'FOSE'
