@@ -309,7 +309,7 @@ class _xSEChunkARVR(_xSEChunk):
             log(u'    [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEChunkMODS(_xSEChunk):
+class _xSEChunkMODS(_xSEChunk, _Remappable):
     """A MODS (Mod Files) record. Available for all script extenders. See
     Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
     specification available)."""
@@ -334,7 +334,11 @@ class _xSEChunkMODS(_xSEChunk):
     def log_chunk(self, log, ins, save_masters, espmMap):
         log(_(u'    %u loaded mods:') % len(self.mod_names))
         for mod_name in self.mod_names:
-            log(_(u'     - %s') % mod_name) # TODO(inf) decode(mod_name) here?
+            log(_(u'     - %s') % mod_name)
+
+    def remap_plugins(self, plugin_renames):
+        self.mod_names = [plugin_renames[x] if x in plugin_renames.keys()
+                          else x for x in self.mod_names]
 
 class _xSEChunkSTVR(_xSEChunk):
     """An STVR (String Variable) record. Only available in OBSE and NVSE. See
