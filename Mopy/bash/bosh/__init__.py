@@ -967,7 +967,8 @@ from .cosaves import PluggyCosave
 from . import cosaves
 
 class SaveInfo(FileInfo):
-    _cosave_type = None  # type: cosaves.ACoSaveFile
+    _cosave_type = None  # type: cosaves.xSECosave
+    _cached_cosave = None
 
     @property
     def cosave_type(self):
@@ -1042,15 +1043,17 @@ class SaveInfo(FileInfo):
 
     def get_cosave(self):
         """:rtype: cosaves.xSECosave"""
-        cosave_path = self.get_se_cosave_path()
-        if cosave_path is None: return None
-        try:
-            return self.cosave_type(cosave_path) # type: cosaves.ACoSaveFile
-        except (OSError, IOError, FileError) as e:
-            if isinstance(e, FileError) or (
-                isinstance(e, (OSError, IOError)) and e.errno != errno.ENOENT):
-                deprint(u'Failed to open %s' % cosave_path, traceback=True)
-            return None
+        if self._cached_cosave is None:
+            cosave_path = self.get_se_cosave_path()
+            if cosave_path is None: return None
+            try:
+                self._cached_cosave = self.cosave_type(cosave_path)
+            except (OSError, IOError, FileError) as e:
+                if isinstance(e, FileError) or (
+                    isinstance(e, (OSError, IOError)) and e.errno != errno.ENOENT):
+                    deprint(u'Failed to open %s' % cosave_path, traceback=True)
+                return None
+        return self._cached_cosave
 
     def get_se_cosave_path(self):
         if self.cosave_type is None: return None
