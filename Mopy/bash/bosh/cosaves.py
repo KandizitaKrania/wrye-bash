@@ -156,21 +156,21 @@ class _AChunk(object):
 class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     _fully_decoded = False
-    __slots__ = ('chunk_type', 'chunk_version', 'chunk_length', 'chunk_data')
+    __slots__ = ('chunk_type', 'chunk_version', 'chunk_data')
 
     def __init__(self, ins, chunk_type):
         self.chunk_type = chunk_type
         self.chunk_version = unpack_int(ins)
-        self.chunk_length = unpack_int(ins)
+        data_len = unpack_int(ins)
         if not self._fully_decoded: # if we haven't fully decoded this record,
                                     # treat it as a binary blob
-            self.chunk_data = ins.read(self.chunk_length)
+            self.chunk_data = ins.read(data_len)
 
     def write_chunk(self, out):
         # Don't forget to reverse signature when writing again
         _pack(out, '=4s', self.chunk_type[::-1])
         _pack(out, '=I', self.chunk_version)
-        _pack(out, '=I', self.chunk_length)
+        _pack(out, '=I', self.chunk_length())
         if not self._fully_decoded:
             out.write(self.chunk_data)
 
@@ -182,6 +182,7 @@ class _xSEChunk(_AChunk):
         # TODO Will need rewriting now that the MODS record is fully decoded
         if self.chunk_type not in self._espm_chunk_type:
             return
+        old_chunk_length = len(self.chunk_data)
         with sio(self.chunk_data) as ins:
             num_of_masters = unpack_byte(ins) # this won't change
             with sio() as out:
@@ -194,9 +195,8 @@ class _xSEChunk(_AChunk):
                     _pack(out, '=H', len(modname_str))
                     out.write(modname_str)
                 self.chunk_data = out.getvalue()
-        old_chunk_length = self.chunk_length
-        self.chunk_length = len(self.chunk_data)
-        plugin_chunk.plugin_data_size += self.chunk_length - old_chunk_length # Todo Test
+        chunk_length = len(self.chunk_data)
+        plugin_chunk.plugin_data_size += chunk_length - old_chunk_length # Todo Test
 
 class _xSEChunkARVR(_xSEChunk):
     """An ARVR (Array Variable) record. Only available in OBSE and NVSE. See
@@ -563,16 +563,15 @@ class _xSEPluginChunk(_AChunk):
     _xSEPluggyChunk) objects."""
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
-    __slots__ = ('plugin_signature', 'num_plugin_chunks', 'plugin_data_size',
-                 'plugin_chunks')
+    __slots__ = ('plugin_signature', 'plugin_chunks')
 
     def __init__(self, ins):
         self.plugin_signature = unpack_4s(ins)[::-1] # aka opcodeBase on pre
                                                      # papyrus
-        self.num_plugin_chunks = unpack_int(ins)
-        self.plugin_data_size = unpack_int(ins) # update it if you edit chunks
+        num_plugin_chunks = unpack_int(ins)
+        unpack_int(ins) # discard chunk_size, we'll generate it when writing
         self.plugin_chunks = []
-        for x in xrange(self.num_plugin_chunks):
+        for x in xrange(num_plugin_chunks):
             ch_class, ch_type = self._get_plugin_chunk_type(ins,
                                                         self._xse_signature,
                                                         self._pluggy_signature)
@@ -656,7 +655,7 @@ class xSECoSave(ACoSaveFile):
         for plugin_ch in self.chunks: # type: _xSEPluginChunk
             plugin_sig = plugin_ch.plugin_signature
             log.setHeader(_(u'Plugin opcode=%08X chunkNum=%u') % (
-                plugin_sig, plugin_ch.num_plugin_chunks,))
+                plugin_sig, len(plugin_ch.plugin_chunks),))
             log(u'=' * 80)
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 80)
@@ -665,10 +664,10 @@ class xSECoSave(ACoSaveFile):
                 chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
                 if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
                     log(u'  %4s  %-4u  %08X' % (
-                        ch.chunk_type, ch.chunk_version, ch.chunk_length))
+                        ch.chunk_type, ch.chunk_version, ch.chunk_length()))
                 else:
                     log(u'  %04X  %-4u  %08X' % (
-                        chunkTypeNum, ch.chunk_version, ch.chunk_length))
+                        chunkTypeNum, ch.chunk_version, ch.chunk_length()))
                 with sio(ch.chunk_data) as ins:
                     ch.log_chunk(log, ins, save_masters, espMap)
 
@@ -682,8 +681,8 @@ class xSECoSave(ACoSaveFile):
             #--Plugins
             for plugin_ch in self.chunks: # type: _xSEPluginChunk
                 _pack(buff, '=I', plugin_ch.plugin_signature)
-                _pack(buff, '=I', plugin_ch.num_plugin_chunks)
-                _pack(buff, '=I', plugin_ch.plugin_data_size)
+                _pack(buff, '=I', len(plugin_ch.plugin_chunks))
+                _pack(buff, '=I', plugin_ch.chunk_length())
                 for chunk in plugin_ch.plugin_chunks: # type: _xSEChunk
                     buff.write(chunk.chunk_type)
                     _pack(buff, '=2I', chunk.chunk_version, chunk.chunk_length)
