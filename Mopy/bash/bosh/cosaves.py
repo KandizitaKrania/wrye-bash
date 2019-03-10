@@ -170,12 +170,10 @@ class _AChunk(object):
         :return: The calculated length.
         """
 
-    # TODO(inf) Drop the ins parameter once refactoring is done
-    # We'll have entirely shifted to loading the chunks inside __init__ by then
-    def log_chunk(self, log, ins, save_masters, espmMap):
+    def log_chunk(self, log, save_masters, plugin_map):
         """
         :param save_masters: the espm masters of the save, used in xSE chunks
-        :param espmMap: a dict populated in pluggy chunks
+        :param plugin_map: a dict populated in pluggy chunks
         :type log: bolt.Log
         """
 
@@ -324,7 +322,7 @@ class _xSEChunkARVR(_xSEChunk):
                 total_len += 4
         return total_len
 
-    def log_chunk(self, log, ins, save_masters, espmMap):
+    def log_chunk(self, log, save_masters, plugin_map):
         if self.mod_index == 255:
             log(_(u'    Mod :  %02X (Save File)') % self.mod_index)
         else:
@@ -398,7 +396,7 @@ class _xSEChunkMODS(_xSEChunk, _Remappable):
             total_len += len(mod_name)
         return total_len
 
-    def log_chunk(self, log, ins, save_masters, espmMap):
+    def log_chunk(self, log, save_masters, plugin_map):
         log(_(u'    %u loaded mods:') % len(self.mod_names))
         for mod_name in self.mod_names:
             log(_(u'     - %s') % mod_name)
@@ -429,7 +427,7 @@ class _xSEChunkSTVR(_xSEChunk):
     def chunk_length(self):
         return 7 + len(self.string_data)
 
-    def log_chunk(self, log, ins, save_masters, espmMap):
+    def log_chunk(self, log, save_masters, plugin_map):
         log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
             self.mod_index, save_masters[self.mod_index].s))
         log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
@@ -437,7 +435,10 @@ class _xSEChunkSTVR(_xSEChunk):
 
 # TODO(inf) What about pluggy chunks inside xSE cosaves?
 class _xSEPluggyChunk(_xSEChunk):
-    def log_chunk(self, log, ins, save_masters, espMap):
+    def log_chunk(self, log, save_masters, espMap):
+        # TODO Quick workaround to allow me to toss the ins parameter
+        # The pluggy chunks need to be properly integrated into this new system
+        ins = sio(self.chunk_data)
         chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum == 1:
             #--Pluggy TypeESP
@@ -741,8 +742,7 @@ class xSECosave(_ACosave):
                 else:
                     log(u'  %04X  %-4u  %08X' % (
                         chunkTypeNum, ch.chunk_version, ch.chunk_length()))
-                with sio(ch.chunk_data) as ins:
-                    ch.log_chunk(log, ins, save_masters, espMap)
+                    ch.log_chunk(log, save_masters, espMap)
 
 class PluggyCosave(_ACosave):
     """Represents a Pluggy cosave, with a .pluggy extension."""
