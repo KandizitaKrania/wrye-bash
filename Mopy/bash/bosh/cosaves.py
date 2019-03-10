@@ -84,16 +84,17 @@ class _AHeader(object):
 class _xSEHeader(_AHeader):
     """Header for xSE cosaves."""
     __slots__ = ('format_version', 'se_version', 'se_minor_version',
-                 'game_version', 'num_plugins')
+                 'game_version', 'num_plugin_chunks')
 
-    # num_plugins: the xSE plugins the cosave knows about - including xSE itself
+    # num_plugin_chunks is the number of xSE plugin chunks contained in the
+    # cosave. Note that xSE itself also counts as one!
     def __init__(self, ins, cosave_path):
         super(_xSEHeader, self).__init__(ins, cosave_path)
         self.format_version = unpack_int(ins)
         self.se_version = unpack_short(ins)
         self.se_minor_version = unpack_short(ins)
         self.game_version = unpack_int(ins)
-        self.num_plugins = unpack_int(ins)
+        self.num_plugin_chunks = unpack_int(ins)
 
     def write_header(self, out):
         super(_xSEHeader, self).write_header(out)
@@ -101,7 +102,7 @@ class _xSEHeader(_AHeader):
         _pack(out, '=H', self.se_version)
         _pack(out, '=H', self.se_minor_version)
         _pack(out, '=I', self.game_version)
-        _pack(out, '=I', self.num_plugins)
+        _pack(out, '=I', self.num_plugin_chunks)
 
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
@@ -563,33 +564,33 @@ class _xSEPluginChunk(_AChunk):
     _xSEPluggyChunk) objects."""
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
-    __slots__ = ('plugin_signature', 'plugin_chunks')
+    __slots__ = ('plugin_signature', 'chunks')
 
     def __init__(self, ins):
         self.plugin_signature = unpack_4s(ins)[::-1] # aka opcodeBase on pre
                                                      # papyrus
-        num_plugin_chunks = unpack_int(ins)
-        unpack_int(ins) # discard chunk_size, we'll generate it when writing
-        self.plugin_chunks = []
-        for x in xrange(num_plugin_chunks):
-            ch_class, ch_type = self._get_plugin_chunk_type(ins,
-                                                        self._xse_signature,
-                                                        self._pluggy_signature)
+        num_chunks = unpack_int(ins)
+        unpack_int(ins) # discard the size, we'll generate it when writing
+        self.chunks = []
+        for x in xrange(num_chunks):
+            ch_class, ch_type = self._get_chunk_type(ins,
+                                                     self._xse_signature,
+                                                     self._pluggy_signature)
             # If ch_type is None, that means we don't have to pass it on
             if ch_type:
-                self.plugin_chunks.append(ch_class(ins, ch_type))
+                self.chunks.append(ch_class(ins, ch_type))
             else:
-                self.plugin_chunks.append(ch_class(ins))
+                self.chunks.append(ch_class(ins))
 
     def chunk_length(self):
         # Every chunk header has a string of length 4 (type) and two integers
         # (version and length)
-        total_len = 12 * len(self.plugin_chunks)
-        for plugin_chunk in self.plugin_chunks:
-            total_len += plugin_chunk.chunk_length()
+        total_len = 12 * len(self.chunks)
+        for chunk in self.chunks:
+            total_len += chunk.chunk_length()
         return total_len
 
-    def _get_plugin_chunk_type(self, ins, xse_signature, pluggy_signature):
+    def _get_chunk_type(self, ins, xse_signature, pluggy_signature):
         # The chunk type strings are reversed in the cosaves
         chunk_type = unpack_4s(ins)[::-1]
         chunk_class = _xSEChunk
@@ -613,13 +614,13 @@ class _PluggyChunk(_AChunk):
 class ACoSaveFile(object):
     chunk_type = _AChunk
     header_type = _AHeader
-    __slots__ = ('cosave_path', 'cosave_header', 'chunks')
+    __slots__ = ('cosave_path', 'cosave_header', 'cosave_chunks')
 
     def __init__(self, cosave_path):
         self.cosave_path = cosave_path
         with cosave_path.open('rb') as ins:
             self.cosave_header = self.header_type(ins, cosave_path)
-            self.chunks = self.load_chunks(ins)
+            self.cosave_chunks = self.load_chunks(ins)
 
     def load_chunks(self, ins):
         pass
@@ -636,7 +637,7 @@ class xSECoSave(ACoSaveFile):
         return loaded_chunks
 
     def map_masters(self, master_renames_dict):
-        for plugin_chunk in self.chunks:
+        for plugin_chunk in self.cosave_chunks:
             for chunk in plugin_chunk.plugin_chunks: # TODO avoid scanning all chunks
                 chunk.chunk_map_master(master_renames_dict, plugin_chunk)
 
@@ -652,15 +653,15 @@ class xSECoSave(ACoSaveFile):
             my_header.se_minor_version,))
         log(_(u'  Game version:     %08X') % (my_header.game_version,))
         #--Plugins
-        for plugin_ch in self.chunks: # type: _xSEPluginChunk
+        for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
             plugin_sig = plugin_ch.plugin_signature
             log.setHeader(_(u'Plugin opcode=%08X chunkNum=%u') % (
-                plugin_sig, len(plugin_ch.plugin_chunks),))
+                plugin_sig, len(plugin_ch.chunks),))
             log(u'=' * 80)
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 80)
             espMap = {}
-            for ch in plugin_ch.plugin_chunks: # type: _xSEChunk
+            for ch in plugin_ch.chunks: # type: _xSEChunk
                 chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
                 if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
                     log(u'  %4s  %-4u  %08X' % (
@@ -674,16 +675,17 @@ class xSECoSave(ACoSaveFile):
     def write_cosave(self, out_path):
         mtime = self.cosave_path.mtime # must exist !
         with sio() as buff:
-            # Update the number of plugins, then write out
+            # We have to update the number of chunks in the header here, since
+            # that can't be done automatically
             my_header = self.cosave_header # type: _xSEHeader
-            my_header.num_plugins = len(self.chunks)
+            my_header.num_plugin_chunks = len(self.cosave_chunks)
             my_header.write_header(buff)
             #--Plugins
-            for plugin_ch in self.chunks: # type: _xSEPluginChunk
+            for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
                 _pack(buff, '=I', plugin_ch.plugin_signature)
-                _pack(buff, '=I', len(plugin_ch.plugin_chunks))
+                _pack(buff, '=I', len(plugin_ch.chunks))
                 _pack(buff, '=I', plugin_ch.chunk_length())
-                for chunk in plugin_ch.plugin_chunks: # type: _xSEChunk
+                for chunk in plugin_ch.chunks: # type: _xSEChunk
                     buff.write(chunk.chunk_type)
                     _pack(buff, '=2I', chunk.chunk_version, chunk.chunk_length)
                     buff.write(chunk.chunk_data)
