@@ -143,13 +143,6 @@ class _AChunk(object):
         :type log: bolt.Log
         """
 
-    def chunk_map_master(self, master_renames_dict, plugin_chunk):
-        """Rename the espm masters - for xSE and Pluggy chunks.
-
-        :param master_renames_dict: mapping of old to new espm names
-        :param plugin_chunk: the plugin_chunk this chunk belongs to
-        """
-
 class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     _fully_decoded = False
