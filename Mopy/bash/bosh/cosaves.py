@@ -654,6 +654,15 @@ class ACoSaveFile(object):
         self.write_cosave(out_path.temp)
         out_path.untemp()
 
+    def dump_cosave(self, log, save_masters):
+        """
+        Dumps information from this cosave into the specified log.
+
+        :param log: A bolt.Log instance to write to.
+        :param save_masters: A list of the masters of the save file that this
+                             cosave belongs to.
+        """
+
 class xSECoSave(ACoSaveFile):
     chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
@@ -685,8 +694,7 @@ class xSECoSave(ACoSaveFile):
             out.write(text)
         out_path.mtime = mtime
 
-    def logStatObse(self, log, save_masters):
-        """Print stats to log."""
+    def dump_cosave(self, log, save_masters):
         #--Header
         my_header = self.cosave_header # type: _xSEHeader
         log.setHeader(_(u'Header'))
