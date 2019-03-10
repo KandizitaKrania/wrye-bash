@@ -302,12 +302,6 @@ class _xSEChunkARVR(_xSEChunk):
             log(u'    [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEChunkCROB(_xSEChunk):
-    """A CROB (Created Object) record. Only available in FOSE and NVSE. See
-    Hooks_CreateObject.cpp in xSE's source code for the only place where it is
-    created (no specification avilable)."""
-    # TODO(inf) Decode this
-
 class _xSEChunkMODS(_xSEChunk):
     """A MODS (Mod Files) record. Available for all script extenders. See
     Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
@@ -541,8 +535,6 @@ class _xSEPluginChunk(_AChunk):
         chunk_class = _xSEChunk
         if chunk_type == 'ARVR':
             chunk_class = _xSEChunkARVR
-        elif chunk_type == 'CROB':
-            chunk_class = _xSEChunkCROB
         elif chunk_type == 'MODS':
             chunk_class = _xSEChunkMODS
         elif chunk_type == 'STVR':
