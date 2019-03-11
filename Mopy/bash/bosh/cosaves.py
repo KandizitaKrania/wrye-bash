@@ -518,61 +518,6 @@ class _xSEChunkSTVR(_xSEChunk, _Dumpable):
 
 # TODO(inf) What about pluggy chunks inside xSE cosaves?
 class _xSEPluggyChunk(_xSEChunk):
-    def log_chunk(self, log, save_masters, espMap):
-        # TODO Quick workaround to allow me to toss the ins parameter
-        # The pluggy chunks need to be properly integrated into this new system
-        ins = sio(self.chunk_data)
-        chunkTypeNum, = struct_unpack('=I', self.chunk_type)
-        if chunkTypeNum == 1:
-            pass
-        elif chunkTypeNum == 2:
-            pass
-        elif chunkTypeNum == 3:
-            pass
-        elif chunkTypeNum == 4:
-            pass
-        elif chunkTypeNum == 5:
-            pass
-        elif chunkTypeNum == 6:
-            pass
-        elif chunkTypeNum == 7:
-            #--Pluggy TypeHudT
-            log(_(u'    Pluggy HudT'))
-            #UNTESTED - uncomment following line to skip this record type
-            #continue
-            hudTid, modId, hudFlags, hudShow, hudPosX, hudPosY, hudDepth, \
-                = _unpack(ins, '=IBBBffh', 17)
-            hudScaleX, hudScaleY, hudAlpha, hudAlignment, hudAutoScale, \
-            hudWidth, hudHeight, hudFormat, = _unpack(ins, '=ffBBBIIB', 20)
-            hudFontNameLen, = _unpack(ins, '=I', 4)
-            hudFontName = decode(ins.read(hudFontNameLen))
-            hudFontHeight, hudFontWidth, hudWeight, hudItalic, hudFontR, \
-            hudFontG, hudFontB, = _unpack(ins, '=IIhBBBB', 14)
-            hudText = decode(ins.read(len(self.chunk_data) - ins.tell()))
-            log(u'      ' + _(u'HudTID :') + u' %u' % hudTid)
-            log(u'      ' + _(u'ModID  :') + u' %02X %s' % (
-                modId, espMap[modId] if modId in espMap else u'ERROR',))
-            log(u'      ' + _(u'Flags  :') + u' %02X' % hudFlags)
-            log(u'      ' + _(u'Show   :') + u' %02X' % hudShow)
-            log(u'      ' + _(u'Pos    :') + u' %f,%f' % (hudPosX, hudPosY,))
-            log(u'      ' + _(u'Depth  :') + u' %u' % hudDepth)
-            log(u'      ' + _(u'Scale  :') + u' %f,%f' % (
-                hudScaleX, hudScaleY,))
-            log(u'      ' + _(u'Alpha  :') + u' %02X' % hudAlpha)
-            log(u'      ' + _(u'Align  :') + u' %02X' % hudAlignment)
-            log(u'      ' + _(u'AutoSc :') + u' %02X' % hudAutoScale)
-            log(u'      ' + _(u'Width  :') + u' %u' % hudWidth)
-            log(u'      ' + _(u'Height :') + u' %u' % hudHeight)
-            log(u'      ' + _(u'Format :') + u' %u' % hudFormat)
-            log(u'      ' + _(u'FName  :') + u' %s' % hudFontName)
-            log(u'      ' + _(u'FHght  :') + u' %u' % hudFontHeight)
-            log(u'      ' + _(u'FWdth  :') + u' %u' % hudFontWidth)
-            log(u'      ' + _(u'FWeigh :') + u' %u' % hudWeight)
-            log(u'      ' + _(u'FItal  :') + u' %u' % hudItalic)
-            log(u'      ' + _(u'FRGB   :') + u' %u,%u,%u' % (
-                hudFontR, hudFontG, hudFontB,))
-            log(u'      ' + _(u'FText  :') + u' %s' % hudText)
-
     def chunk_map_master(self, master_renames_dict, plugin_chunk):
         chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum != 1:
@@ -922,6 +867,112 @@ class _PluggyHudSBlock(_PluggyBlock):
             log(_(u'      Alignment : %02X') % hud_entry[12])
             log(_(u'      Auto-Scale: %02X') % hud_entry[13])
 
+class _PluggyHudTBlock(_PluggyBlock):
+    """A HUD Text records block. Contains information related to custom HUDs
+    that was saved. This is an optional block and, if present, follows directly
+    after the HudS block."""
+    __slots__ = ('hud_entries',)
+
+    def __init__(self, ins, record_type):
+        super(_PluggyHudTBlock, self).__init__(record_type)
+        self.hud_entries = []
+        for x in xrange(unpack_int(ins)):
+            hud_id = unpack_int(ins)
+            plugin_index = unpack_byte(ins)
+            hud_flags = unpack_byte(ins)
+            show_mode = unpack_byte(ins)
+            pos_x = unpack_int(ins)
+            pos_y = unpack_int(ins)
+            depth = unpack_short(ins)
+            scale_x = unpack_int(ins)
+            scale_y = unpack_int(ins)
+            ins.read(4) # Discard, unused
+            alpha = unpack_byte(ins)
+            alignment = unpack_byte(ins)
+            auto_scale = unpack_byte(ins)
+            hud_width = unpack_int(ins)
+            hud_height = unpack_int(ins)
+            text_format = unpack_byte(ins)
+            font_name = ins.read(unpack_int(ins))
+            text_data = ins.read(unpack_int(ins))
+            font_height = unpack_int(ins)
+            font_width = unpack_int(ins)
+            font_boldness = unpack_short(ins)
+            font_italic = unpack_byte(ins)
+            font_red = unpack_byte(ins)
+            font_green = unpack_byte(ins)
+            font_blue = unpack_byte(ins)
+            self.hud_entries.append([hud_id, plugin_index, hud_flags,
+                                     show_mode, pos_x, pos_y, depth, scale_x,
+                                     scale_y, alpha, alignment, auto_scale,
+                                     hud_width, hud_height, text_format,
+                                     font_name, text_data, font_height,
+                                     font_width, font_boldness, font_italic,
+                                     font_red, font_green, font_blue])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', len(self.hud_entries))
+        for hud_entry in self.hud_entries:
+            _pack(out, '=I', hud_entry[0])  # hud_id
+            _pack(out, '=B', hud_entry[1])  # plugin_index
+            _pack(out, '=B', hud_entry[2])  # hud_flags
+            _pack(out, '=B', hud_entry[3])  # show_mode
+            _pack(out, '=I', hud_entry[4])  # pos_x
+            _pack(out, '=I', hud_entry[5])  # pos_y
+            _pack(out, '=H', hud_entry[6])  # depth
+            _pack(out, '=I', hud_entry[7])  # scale_x
+            _pack(out, '=I', hud_entry[8])  # scale_y
+            _pack(out, '=I', 0)             # unused
+            _pack(out, '=B', hud_entry[9])  # alpha
+            _pack(out, '=B', hud_entry[10]) # alignment
+            _pack(out, '=B', hud_entry[11]) # auto_scale
+            _pack(out, '=I', hud_entry[12]) # hud_width
+            _pack(out, '=I', hud_entry[13]) # hud_height
+            _pack(out, '=B', hud_entry[14]) # text_format
+            font_name = hud_entry[15]
+            _pack(out, '=I', len(font_name))
+            out.write(font_name)
+            text_data = hud_entry[16]
+            _pack(out, '=I', len(text_data))
+            out.write(text_data)
+            _pack(out, '=I', hud_entry[17]) # font_height
+            _pack(out, '=I', hud_entry[18]) # font_width
+            _pack(out, '=H', hud_entry[19]) # font_boldness
+            _pack(out, '=B', hud_entry[20]) # font_italic
+            _pack(out, '=B', hud_entry[21]) # font_red
+            _pack(out, '=B', hud_entry[22]) # font_green
+            _pack(out, '=B', hud_entry[23]) # font_blue
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u HUD Text entries:') % len(self.hud_entries))
+        for hud_entry in self.hud_entries:
+            log(_(u'    - HUD ID     : %u') % hud_entry[0])
+            plugin_index = hud_entry[1]
+            log(_(u'      Owner      : %s (%02X)') % (
+                save_masters[plugin_index], plugin_index))
+            log(_(u'      Flags      : %02X') % hud_entry[2])
+            log(_(u'      Show Mode  : %02X') % hud_entry[3])
+            log(_(u'      X Position : %u') % hud_entry[4])
+            log(_(u'      Y Position : %u') % hud_entry[5])
+            log(_(u'      Depth      : %u') % hud_entry[6])
+            log(_(u'      X Scale    : %u') % hud_entry[7])
+            log(_(u'      Y Scale    : %u') % hud_entry[8])
+            log(_(u'      Alpha      : %02X') % hud_entry[9])
+            log(_(u'      Alignment  : %02X') % hud_entry[10])
+            log(_(u'      Auto-Scale : %02X') % hud_entry[11])
+            log(_(u'      HUD Width  : %u') % hud_entry[12])
+            log(_(u'      HUD Height : %u') % hud_entry[13])
+            log(_(u'      Text Format: %u') % hud_entry[14])
+            log(_(u'      Font Name  : %s') % hud_entry[15])
+            log(_(u'      Text Data  : %s') % hud_entry[16])
+            log(_(u'      Font Height: %u') % hud_entry[17])
+            log(_(u'      Font Width : %u') % hud_entry[18])
+            log(_(u'      Boldness   : %u') % hud_entry[19])
+            log(_(u'      Italic     : %u') % hud_entry[20])
+            log(_(u'      Font Color : (%u, %u, %u)') % (hud_entry[21],
+                                                         hud_entry[22],
+                                                         hud_entry[23]))
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -1062,7 +1113,8 @@ class PluggyCosave(_ACosave):
     # Used to convert from block type int to block class
     # See pluggy file format specification for how these map
     _block_types = [_PluggyPluginBlock, _PluggyStringBlock, _PluggyArrayBlock,
-                    _PluggyNameBlock, _PluggyScreenInfoBlock, _PluggyHudSBlock]
+                    _PluggyNameBlock, _PluggyScreenInfoBlock, _PluggyHudSBlock,
+                    _PluggyHudTBlock]
     __slots__ = ()
 
     def read_chunks(self, ins):
