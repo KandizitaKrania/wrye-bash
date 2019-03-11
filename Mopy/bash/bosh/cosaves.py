@@ -29,7 +29,7 @@ renaming of the masters of the xSE plugin chunk itself and of the Pluggy chunk.
 import string
 from ..bolt import sio, GPath, decode, encode, unpack_string, unpack_int, \
     unpack_short, unpack_4s, unpack_byte, unpack_str16, struct_pack, \
-    struct_unpack, deprint
+    struct_unpack, deprint, unpack_float, unpack_double
 from ..exception import AbstractError, FileError
 
 
@@ -293,7 +293,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
         self.elements = []
         for x in xrange(num_elements):
             if self.key_type == 1:
-                key, = _unpack(ins, '=d', 8)
+                key = unpack_double(ins)
             elif self.key_type == 3:
                 key = ins.read(unpack_short(ins))
             else:
@@ -301,7 +301,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
                                    self.key_type)
             element_type = unpack_byte(ins)
             if element_type == 1:
-                stored_data, = _unpack(ins, '=d', 8)
+                stored_data, = unpack_double(ins)
             elif element_type == 2:
                 stored_data = unpack_int(ins)
             elif element_type == 3:
@@ -927,7 +927,7 @@ class PluggyCosave(_ACosave):
         while True:
             raw_type = ins.read(1)
             if not raw_type: break # EOF
-            record_type = struct_unpack('=B', raw_type)
+            record_type = struct_unpack('=B', raw_type)[0]
             block_type = self._get_block_type(record_type)
             read_chunks.append(block_type(record_type))
         return read_chunks

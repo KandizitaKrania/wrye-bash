@@ -1037,6 +1037,7 @@ class SaveInfo(FileInfo):
         save_paths.extend(CoSaves.get_new_paths(*save_paths[0]))
         return save_paths
 
+    # TODO(inf) Turn into a property?
     def get_xse_cosave(self):
         """:rtype: cosaves.xSECosave"""
         if self._xse_cosave is None:
