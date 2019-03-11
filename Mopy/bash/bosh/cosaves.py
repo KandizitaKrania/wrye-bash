@@ -524,15 +524,7 @@ class _xSEPluggyChunk(_xSEChunk):
         if chunkTypeNum == 1:
             pass
         elif chunkTypeNum == 2:
-            #--Pluggy TypeSTR
-            log(_(u'    Pluggy String'))
-            strId, modId, strFlags, = _unpack(ins, '=IBB', 6)
-            strData = ins.read(len(self.chunk_data) - ins.tell())
-            log(u'      ' + _(u'StrID :') + u' %u' % strId)
-            log(u'      ' + _(u'ModID :') + u' %02X %s' % (
-                modId, espMap[modId] if modId in espMap else u'ERROR',))
-            log(u'      ' + _(u'Flags :') + u' %u' % strFlags)
-            log(u'      ' + _(u'Data  :') + u' %s' % strData)
+            pass
         elif chunkTypeNum == 3:
             #--Pluggy TypeArray
             log(_(u'    Pluggy Array'))
@@ -750,6 +742,47 @@ class _PluggyPluginBlock(_PluggyBlock, _Remappable):
             plugin_name = plugin[2]
             plugin[2] = plugin_renames.get(plugin_name, plugin_name)
 
+class _PluggyStringBlock(_PluggyBlock):
+    """The string records block of a pluggy cosave. Contains string data from
+    plugins that was saved. This is an optional block and, if present, follows
+    directly after the plugin block."""
+    __slots__ = ('stored_strings',)
+
+    def __init__(self, ins, record_type):
+        super(_PluggyStringBlock, self).__init__(record_type)
+        string_count = unpack_int(ins)
+        self.stored_strings = []
+        for x in xrange(string_count):
+            string_id = unpack_int(ins)
+            plugin_index = unpack_byte(ins)
+            string_flags = unpack_byte(ins)
+            string_len = unpack_int(ins)
+            string_data = ins.read(string_len)
+            self.stored_strings.append([string_id, plugin_index, string_flags,
+                                        string_data])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', len(self.stored_strings))
+        for stored_string in self.stored_strings:
+            string_id, plugin_index = stored_string[0], stored_string[1]
+            string_flags, string_data = stored_string[2], stored_string[3]
+            _pack(out, '=I', string_id)
+            _pack(out, '=B', plugin_index)
+            _pack(out, '=B', string_flags)
+            _pack(out, '=I', len(string_data))
+            out.write(string_data)
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u stored strings:') % len(self.stored_strings))
+        for stored_string in self.stored_strings:
+            string_id, plugin_index = stored_string[0], stored_string[1]
+            string_flags, string_data = stored_string[2], stored_string[3]
+            log(_(u'    - ID    : %u') % string_id)
+            log(_(u'      Owner : %02X (%s)') % (plugin_index,
+                                                 save_masters[plugin_index]))
+            log(_(u'      Flags : %u') % string_flags)
+            log(_(u'      Data  : %s') % string_data)
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -908,6 +941,8 @@ class PluggyCosave(_ACosave):
         # See pluggy specification for how these map
         if record_type == 0:
             return _PluggyPluginBlock
+        elif record_type == 1:
+            return _PluggyStringBlock
         else:
             raise FileError(self.cosave_path.tail, u'Unknown pluggy record'
                                                    u'block type %u.' %
