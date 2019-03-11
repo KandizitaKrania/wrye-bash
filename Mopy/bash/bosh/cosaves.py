@@ -225,6 +225,10 @@ class _xSEModListChunk(_xSEChunk, _Dumpable, _Remappable):
     LIMD) """
     __slots__ = ('mod_names',)
 
+    def __init__(self, ins, chunk_type):
+        super(_xSEModListChunk, self).__init__(ins, chunk_type)
+        self.mod_names = []
+
     def read_mod_names(self, ins, mod_count):
         """
         Reads a list of mod names with length mod_count from the specified
@@ -233,7 +237,6 @@ class _xSEModListChunk(_xSEChunk, _Dumpable, _Remappable):
         :param ins: The input stream to read from.
         :param mod_count: The number of mod names to read.
         """
-        self.mod_names = []
         for x in xrange(mod_count):
             name_len = unpack_short(ins)
             self.mod_names.append(ins.read(name_len))
