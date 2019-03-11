@@ -321,29 +321,29 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
 
     def dump_to_log(self, log, save_masters):
         if self.mod_index == 255:
-            log(_(u'    Mod :  %02X (Save File)') % self.mod_index)
+            log(_(u'   Mod :  %02X (Save File)') % self.mod_index)
         else:
-            log(_(u'    Mod :  %02X (%s)') % (
+            log(_(u'   Mod :  %02X (%s)') % (
                 self.mod_index, save_masters[self.mod_index].s))
-        log(_(u'    ID  :  %u') % self.array_id)
+        log(_(u'   ID  :  %u') % self.array_id)
         if self.key_type == 1: #Numeric
             if self.is_packed:
-                log(_(u'    Type:  Array'))
+                log(_(u'   Type:  Array'))
             else:
-                log(_(u'    Type:  Map'))
+                log(_(u'   Type:  Map'))
         elif self.key_type == 3:
-            log(_(u'    Type:  StringMap'))
+            log(_(u'   Type:  StringMap'))
         else:
-            log(_(u'    Type:  Unknown'))
+            log(_(u'   Type:  Unknown'))
         if self.chunk_version >= 1:
-            log(u'    Refs:')
+            log(u'   Refs:')
             for refModID in self.references:
                 if refModID == 255:
-                    log(_(u'      %02X (Save File)') % refModID)
+                    log(_(u'    - %02X (Save File)') % refModID)
                 else:
-                    log(u'      %02X (%s)' % (refModID,
+                    log(u'    - %02X (%s)' % (refModID,
                                               save_masters[refModID].s))
-        log(_(u'    Size:  %u') % len(self.elements))
+        log(_(u'   Size:  %u') % len(self.elements))
         for element in self.elements:
             key, dataType, stored_data = element[0], element[1], element[2]
             if self.key_type == 1:
@@ -361,7 +361,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
                 dataStr = decode(stored_data)
             elif dataType == 4:
                 dataStr = u'%u' % stored_data
-            log(u'    [%s]:%s = %s' % (keyStr, (
+            log(u'    - [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
 class _xSEChunkMODS(_xSEChunk, _Dumpable, _Remappable):
@@ -394,9 +394,9 @@ class _xSEChunkMODS(_xSEChunk, _Dumpable, _Remappable):
         return total_len
 
     def dump_to_log(self, log, save_masters):
-        log(_(u'    %u loaded mods:') % len(self.mod_names))
+        log(_(u'   %u loaded mods:') % len(self.mod_names))
         for mod_name in self.mod_names:
-            log(_(u'     - %s') % mod_name)
+            log(_(u'    - %s') % mod_name)
 
     def remap_plugins(self, plugin_renames):
         self.mod_names = [plugin_renames.get(x, x) for x in self.mod_names]
@@ -425,10 +425,10 @@ class _xSEChunkSTVR(_xSEChunk, _Dumpable):
         return 7 + len(self.string_data)
 
     def dump_to_log(self, log, save_masters):
-        log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
-            self.mod_index, save_masters[self.mod_index].s))
-        log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
-        log(u'    ' + _(u'Data:') + u'  %s' % self.string_data)
+        log(_(u'   Mod : %02X (%s)') % (self.mod_index,
+                                        save_masters[self.mod_index].s))
+        log(_(u'   ID  : %u') % self.string_id)
+        log(_(u'   Data: %s') % self.string_data)
 
 # TODO(inf) What about pluggy chunks inside xSE cosaves?
 class _xSEPluggyChunk(_xSEChunk):
@@ -716,7 +716,7 @@ class xSECosave(_ACosave):
             log.setHeader(_(u'Plugin: %s, Total chunks: %u') % (
                 plugin_sig, len(plugin_chunk.chunks)))
             log(u'=' * 40)
-            log(_(u'  Type  Ver   Size'))
+            log(_(u'  Type  Version Size (in bytes)'))
             log(u'-' * 40)
             for chunk in plugin_chunk.chunks: # type: _xSEChunk
                 log(u'  %4s  %-4u     %u' % (chunk.chunk_type,
