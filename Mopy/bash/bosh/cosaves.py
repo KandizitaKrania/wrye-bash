@@ -534,28 +534,7 @@ class _xSEPluggyChunk(_xSEChunk):
         elif chunkTypeNum == 5:
             pass
         elif chunkTypeNum == 6:
-            #--Pluggy TypeHudS
-            log(u'    ' + _(u'Pluggy HudS'))
-            #UNTESTED - uncomment following line to skip this record type
-            #continue
-            hudSid, modId, hudFlags, hudRootID, hudShow, hudPosX, hudPosY, \
-            hudDepth, hudScaleX, hudScaleY, hudAlpha, hudAlignment, \
-            hudAutoScale, = _unpack(ins, '=IBBBBffhffBBB', 29)
-            hudFileName = decode(ins.read(len(self.chunk_data) - ins.tell()))
-            log(u'      ' + _(u'HudSID :') + u' %u' % hudSid)
-            log(u'      ' + _(u'ModID  :') + u' %02X %s' % (
-                modId, espMap[modId] if modId in espMap else u'ERROR',))
-            log(u'      ' + _(u'Flags  :') + u' %02X' % hudFlags)
-            log(u'      ' + _(u'RootID :') + u' %u' % hudRootID)
-            log(u'      ' + _(u'Show   :') + u' %02X' % hudShow)
-            log(u'      ' + _(u'Pos    :') + u' %f,%f' % (hudPosX, hudPosY,))
-            log(u'      ' + _(u'Depth  :') + u' %u' % hudDepth)
-            log(u'      ' + _(u'Scale  :') + u' %f,%f' % (
-                hudScaleX, hudScaleY,))
-            log(u'      ' + _(u'Alpha  :') + u' %02X' % hudAlpha)
-            log(u'      ' + _(u'Align  :') + u' %02X' % hudAlignment)
-            log(u'      ' + _(u'AutoSc :') + u' %02X' % hudAutoScale)
-            log(u'      ' + _(u'File   :') + u' %s' % hudFileName)
+            pass
         elif chunkTypeNum == 7:
             #--Pluggy TypeHudT
             log(_(u'    Pluggy HudT'))
@@ -872,6 +851,77 @@ class _PluggyScreenInfoBlock(_PluggyBlock):
         log(_(u'   Width : %u') % self.screen_width)
         log(_(u'   Height: %u') % self.screen_height)
 
+class _PluggyHudSBlock(_PluggyBlock):
+    """A HUD Screen / Image records block. Contains information related to
+    custom HUDs that was saved. This is an optional block and, if present,
+    follows directly after the screen info block."""
+    __slots__ = ('hud_entries',)
+
+    def __init__(self, ins, record_type):
+        super(_PluggyHudSBlock, self).__init__(record_type)
+        self.hud_entries = []
+        for x in xrange(unpack_int(ins)):
+            hud_id = unpack_int(ins)
+            plugin_index = unpack_byte(ins)
+            hud_flags = unpack_byte(ins)
+            root_id = unpack_byte(ins)
+            file_name = ins.read(unpack_int(ins))
+            show_mode = unpack_byte(ins)
+            pos_x = unpack_int(ins)
+            pos_y = unpack_int(ins)
+            depth = unpack_short(ins)
+            scale_x = unpack_int(ins)
+            scale_y = unpack_int(ins)
+            ins.read(4) # Discard, unused
+            alpha = unpack_byte(ins)
+            alignment = unpack_byte(ins)
+            auto_scale = unpack_byte(ins)
+            self.hud_entries.append([hud_id, plugin_index, hud_flags, root_id,
+                                     file_name, show_mode, pos_x, pos_y, depth,
+                                     scale_x, scale_y, alpha, alignment,
+                                     auto_scale])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', len(self.hud_entries))
+        for hud_entry in self.hud_entries:
+            _pack(out, '=I', hud_entry[0])      # hud_id
+            _pack(out, '=B', hud_entry[1])      # plugin_index
+            _pack(out, '=B', hud_entry[2])      # hud_flags
+            _pack(out, '=B', hud_entry[3])      # root_id
+            file_name = hud_entry[4]
+            _pack(out, '=I', len(file_name))
+            out.write(file_name)
+            _pack(out, '=B', hud_entry[5])      # show_mode
+            _pack(out, '=I', hud_entry[6])      # pos_x
+            _pack(out, '=I', hud_entry[7])      # pos_y
+            _pack(out, '=H', hud_entry[8])      # depth
+            _pack(out, '=I', hud_entry[9])      # scale_x
+            _pack(out, '=I', hud_entry[10])     # scale_y
+            _pack(out, '=I', 0)                 # unused
+            _pack(out, '=B', hud_entry[11])     # alpha
+            _pack(out, '=B', hud_entry[12])     # alignment
+            _pack(out, '=B', hud_entry[13])     # auto_scale
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u HUD Screen entries:') % len(self.hud_entries))
+        for hud_entry in self.hud_entries:
+            log(_(u'    - HUD ID    : %u') % hud_entry[0])
+            plugin_index = hud_entry[1]
+            log(_(u'      Owner     : %s (%02X)') % (
+                save_masters[plugin_index], plugin_index))
+            log(_(u'      Flags     : %02X') % hud_entry[2])
+            log(_(u'      Root ID   : %u') % hud_entry[3])
+            log(_(u'      File      : %s') % hud_entry[4])
+            log(_(u'      Show Mode : %02X') % hud_entry[5])
+            log(_(u'      X Position: %u') % hud_entry[6])
+            log(_(u'      Y Position: %u') % hud_entry[7])
+            log(_(u'      Depth     : %u') % hud_entry[8])
+            log(_(u'      X Scale   : %u') % hud_entry[9])
+            log(_(u'      Y Scale   : %u') % hud_entry[10])
+            log(_(u'      Alpha     : %02X') % hud_entry[11])
+            log(_(u'      Alignment : %02X') % hud_entry[12])
+            log(_(u'      Auto-Scale: %02X') % hud_entry[13])
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -1012,7 +1062,7 @@ class PluggyCosave(_ACosave):
     # Used to convert from block type int to block class
     # See pluggy file format specification for how these map
     _block_types = [_PluggyPluginBlock, _PluggyStringBlock, _PluggyArrayBlock,
-                    _PluggyNameBlock, _PluggyScreenInfoBlock]
+                    _PluggyNameBlock, _PluggyScreenInfoBlock, _PluggyHudSBlock]
     __slots__ = ()
 
     def read_chunks(self, ins):
