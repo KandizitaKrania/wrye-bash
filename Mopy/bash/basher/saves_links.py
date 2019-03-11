@@ -773,7 +773,7 @@ class Save_StatObse(AppendableLink, OneItemLink):
             log = bolt.LogFile(StringIO.StringIO())
             cosave = self._selected_info.get_xse_cosave()
             if cosave is not None:
-                cosave.dump_cosave(log, self._selected_info.header.masters)
+                cosave.dump_to_log(log, self._selected_info.header.masters)
         text = log.out.getvalue()
         log.out.close()
         if cosave is not None:

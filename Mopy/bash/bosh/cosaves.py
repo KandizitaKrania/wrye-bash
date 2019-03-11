@@ -52,9 +52,20 @@ class _Remappable(object):
         """
         raise AbstractError()
 
+class _Dumpable(object):
+    """Mixin for objects inside cosaves that can be dumped to a log."""
+    def dump_to_log(self, log, save_masters):
+        """
+        Dumps information from this object into the specified log.
+
+        :param log: A bolt.Log instance to write to.
+        :param save_masters: A list of the masters of the save file that this
+                             object's cosave belongs to.
+        """
+
 #------------------------------------------------------------------------------
 # Headers
-class _AHeader(object):
+class _AHeader(_Dumpable):
     """Abstract base class for cosave headers."""
     savefile_tag = 'OVERRIDE'
     __slots__ = ()
@@ -82,15 +93,7 @@ class _AHeader(object):
         """
         out.write(self.savefile_tag)
 
-    def dump_header(self, log, save_masters):
-        """
-        Dumps information from this header into the specified log. The default
-        implementation only writes out a 'Header' heading and a separator.
-
-        :param log: A bolt.Log instance to write to.
-        :param save_masters: A list of the masters of the save file that this
-                             cosave belongs to.
-        """
+    def dump_to_log(self, log, save_masters):
         log.setHeader(_(u'%s Header') % self.savefile_tag)
         log(u'=' * 40)
 
@@ -117,8 +120,8 @@ class _xSEHeader(_AHeader):
         _pack(out, '=I', self.game_version)
         _pack(out, '=I', self.num_plugin_chunks)
 
-    def dump_header(self, log, save_masters):
-        super(_xSEHeader, self).dump_header(log, save_masters)
+    def dump_to_log(self, log, save_masters):
+        super(_xSEHeader, self).dump_to_log(log, save_masters)
         log(_(u'  Format version:   %08X') % self.format_version)
         log(_(u'  %s version:      %u.%u') % (self.savefile_tag,
                                               self.se_version,
@@ -143,8 +146,8 @@ class _PluggyHeader(_AHeader):
         super(_PluggyHeader, self).write_header(out)
         _pack(out, '=I', self._max_supported_version)
 
-    def dump_header(self, log, save_masters):
-        super(_PluggyHeader, self).dump_header(log, save_masters)
+    def dump_to_log(self, log, save_masters):
+        super(_PluggyHeader, self).dump_to_log(log, save_masters)
         log(_(u'  Pluggy file format version: %08X') %
             self._max_supported_version)
 
@@ -169,13 +172,6 @@ class _AChunk(object):
         follows after this chunk's header.
 
         :return: The calculated length.
-        """
-
-    def log_chunk(self, log, save_masters, plugin_map):
-        """
-        :param save_masters: the espm masters of the save, used in xSE chunks
-        :param plugin_map: a dict populated in pluggy chunks
-        :type log: bolt.Log
         """
 
 class _xSEChunk(_AChunk):
@@ -223,7 +219,7 @@ class _xSEChunk(_AChunk):
         chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += chunk_length - old_chunk_length # Todo Test
 
-class _xSEChunkARVR(_xSEChunk):
+class _xSEChunkARVR(_xSEChunk, _Dumpable):
     """An ARVR (Array Variable) record. Only available in OBSE and NVSE. See
     ArrayVar.h in xSE's source code for the specification."""
     _fully_decoded = True
@@ -323,7 +319,7 @@ class _xSEChunkARVR(_xSEChunk):
                 total_len += 4
         return total_len
 
-    def log_chunk(self, log, save_masters, plugin_map):
+    def dump_to_log(self, log, save_masters):
         if self.mod_index == 255:
             log(_(u'    Mod :  %02X (Save File)') % self.mod_index)
         else:
@@ -368,7 +364,7 @@ class _xSEChunkARVR(_xSEChunk):
             log(u'    [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEChunkMODS(_xSEChunk, _Remappable):
+class _xSEChunkMODS(_xSEChunk, _Dumpable, _Remappable):
     """A MODS (Mod Files) record. Available for all script extenders. See
     Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
     specification available)."""
@@ -397,7 +393,7 @@ class _xSEChunkMODS(_xSEChunk, _Remappable):
             total_len += len(mod_name)
         return total_len
 
-    def log_chunk(self, log, save_masters, plugin_map):
+    def dump_to_log(self, log, save_masters):
         log(_(u'    %u loaded mods:') % len(self.mod_names))
         for mod_name in self.mod_names:
             log(_(u'     - %s') % mod_name)
@@ -405,7 +401,7 @@ class _xSEChunkMODS(_xSEChunk, _Remappable):
     def remap_plugins(self, plugin_renames):
         self.mod_names = [plugin_renames.get(x, x) for x in self.mod_names]
 
-class _xSEChunkSTVR(_xSEChunk):
+class _xSEChunkSTVR(_xSEChunk, _Dumpable):
     """An STVR (String Variable) record. Only available in OBSE and NVSE. See
     StringVar.h in xSE's source code for the specification."""
     _fully_decoded = True
@@ -428,7 +424,7 @@ class _xSEChunkSTVR(_xSEChunk):
     def chunk_length(self):
         return 7 + len(self.string_data)
 
-    def log_chunk(self, log, save_masters, plugin_map):
+    def dump_to_log(self, log, save_masters):
         log(u'    ' + _(u'Mod :') + u'  %02X (%s)' % (
             self.mod_index, save_masters[self.mod_index].s))
         log(u'    ' + _(u'ID  :') + u'  %u' % self.string_id)
@@ -642,7 +638,7 @@ class _PluggyChunk(_AChunk):
 
 #------------------------------------------------------------------------------
 # Files
-class _ACosave(object):
+class _ACosave(_Dumpable):
     """The abstract base class for all cosave files."""
     chunk_type = _AChunk
     header_type = _AHeader
@@ -677,15 +673,6 @@ class _ACosave(object):
         out_path = out_path or self.cosave_path
         self.write_cosave(out_path.temp)
         out_path.untemp()
-
-    def dump_cosave(self, log, save_masters):
-        """
-        Dumps information from this cosave into the specified log.
-
-        :param log: A bolt.Log instance to write to.
-        :param save_masters: A list of the masters of the save file that this
-                             cosave belongs to.
-        """
 
 class xSECosave(_ACosave):
     """Represents an xSE cosave, with a .**se extension."""
@@ -722,8 +709,8 @@ class xSECosave(_ACosave):
             out.write(text)
         out_path.mtime = mtime
 
-    def dump_cosave(self, log, save_masters):
-        self.cosave_header.dump_header(log, save_masters)
+    def dump_to_log(self, log, save_masters):
+        self.cosave_header.dump_to_log(log, save_masters)
         for plugin_chunk in self.cosave_chunks: # type: _xSEPluginChunk
             plugin_sig = self._get_plugin_signature(plugin_chunk)
             log.setHeader(_(u'Plugin: %s, Total chunks: %u') % (
@@ -731,16 +718,12 @@ class xSECosave(_ACosave):
             log(u'=' * 40)
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 40)
-            espMap = {}
             for chunk in plugin_chunk.chunks: # type: _xSEChunk
-                chunkTypeNum, = struct_unpack('=I', chunk.chunk_type)
-                if chunk.chunk_type[0] >= ' ' and chunk.chunk_type[3] >= ' ': # HUH ?
-                    log(u'  %4s  %-4u  %08X' % (
-                        chunk.chunk_type, chunk.chunk_version, chunk.chunk_length()))
-                else:
-                    log(u'  %04X  %-4u  %08X' % (
-                        chunkTypeNum, chunk.chunk_version, chunk.chunk_length()))
-                    chunk.log_chunk(log, save_masters, espMap)
+                log(u'  %4s  %-4u     %u' % (chunk.chunk_type,
+                                             chunk.chunk_version,
+                                             chunk.chunk_length()))
+                if isinstance(chunk, _Dumpable):
+                    chunk.dump_to_log(log, save_masters)
 
     def _get_plugin_signature(self, plugin_chunk):
         """
