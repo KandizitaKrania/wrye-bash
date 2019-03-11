@@ -729,7 +729,6 @@ class _PluggyBlock(_AChunk):
 # Files
 class _ACosave(_Dumpable):
     """The abstract base class for all cosave files."""
-    chunk_type = _AChunk
     header_type = _AHeader
     __slots__ = ('cosave_path', 'cosave_header', 'cosave_chunks')
 
@@ -772,7 +771,6 @@ class _ACosave(_Dumpable):
 
 class xSECosave(_ACosave):
     """Represents an xSE cosave, with a .**se extension."""
-    chunk_type = _xSEPluginChunk
     header_type = _xSEHeader
     _pluggy_signature = None # signature (aka opcodeBase) of Pluggy plugin
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
@@ -782,7 +780,7 @@ class xSECosave(_ACosave):
         read_chunks = []
         my_header = self.cosave_header # type: _xSEHeader
         for x in xrange(my_header.num_plugin_chunks):
-            read_chunks.append(self.chunk_type(ins))
+            read_chunks.append(_xSEPluginChunk(ins))
         return read_chunks
 
     def map_masters(self, master_renames_dict):
@@ -863,7 +861,6 @@ class xSECosave(_ACosave):
 
 class PluggyCosave(_ACosave):
     """Represents a Pluggy cosave, with a .pluggy extension."""
-    chunk_type = _PluggyBlock
     header_type = _PluggyHeader
     __slots__ = ()
 
