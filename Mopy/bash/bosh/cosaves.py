@@ -81,8 +81,8 @@ class _AHeader(_Dumpable):
         """
         actual_tag = unpack_string(ins, len(self.savefile_tag))
         if actual_tag != self.savefile_tag:
-            raise FileError(cosave_path, u'Header tag wrong: got %r, but '
-                                         u'expected %r' %
+            raise FileError(cosave_path.tail, u'Header tag wrong: got %r, but '
+                                              u'expected %r' %
                             (actual_tag, self.savefile_tag))
 
     def write_header(self, out):
@@ -132,16 +132,23 @@ class _xSEHeader(_AHeader):
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
     savefile_tag = 'PluggySave'
-    _max_supported_version = 0x0105000
+    _max_supported_version = 0x01050000
+    _min_supported_version = 0x01020000
     __slots__ = ()
 
     def __init__(self, ins, cosave_path):
         super(_PluggyHeader, self).__init__(ins, cosave_path)
         version = unpack_int(ins)
         if version > self._max_supported_version:
-            raise FileError(cosave_path, u'Version of pluggy save file format '
-                                         u'is too new - only versions up to '
-                                         u'1.6.0000 are supported.')
+            raise FileError(cosave_path.tail, u'Version of pluggy save file'
+                                              u'format is too new - only'
+                                              u'versions up to 1.6.0000 are'
+                                              u'supported.')
+        elif version < self._min_supported_version:
+            raise FileError(cosave_path.tail, u'Version of pluggy save file'
+                                              u'format is too old - only'
+                                              u'verions >= 1.2.0000 are'
+                                              u'supported.')
 
     def write_header(self, out):
         super(_PluggyHeader, self).write_header(out)
