@@ -311,7 +311,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             else:
                 raise RuntimeError(u'Unknown or unsupported element type %u.' %
                                    element_type)
-            self.elements.append((key, element_type, stored_data))
+            self.elements.append([key, element_type, stored_data])
 
     def write_chunk(self, out):
         super(_xSEChunkARVR, self).write_chunk(out)
@@ -950,7 +950,7 @@ class PluggyCosave(_ACosave):
             for x in range(count):
                 espid,index,modLen = _unpack(ins, '=2BI', 6)
                 modName = GPath(decode(ins.read(modLen)))
-                self._plugins.append((espid, index, modName))
+                self._plugins.append([espid, index, modName])
             #--Other
             self.other = ins.getvalue()[ins.tell():]
         deprint(struct_unpack('I', self.other[-4:]), self.cosave_path.size-8)
