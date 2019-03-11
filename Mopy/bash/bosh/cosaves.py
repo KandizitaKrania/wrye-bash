@@ -245,8 +245,7 @@ class _xSEModListChunk(_xSEChunk, _Dumpable, _Remappable):
         :param mod_count: The number of mod names to read.
         """
         for x in xrange(mod_count):
-            name_len = unpack_short(ins)
-            self.mod_names.append(ins.read(name_len))
+            self.mod_names.append(ins.read(unpack_short(ins)))
 
     def write_mod_names(self, out):
         """
@@ -307,8 +306,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             elif element_type == 2:
                 stored_data = unpack_int(ins)
             elif element_type == 3:
-                data_len = unpack_short(ins)
-                stored_data = ins.read(data_len)
+                stored_data = ins.read(unpack_short(ins))
             elif element_type == 4:
                 stored_data = unpack_int(ins)
             else:
@@ -720,12 +718,13 @@ class _xSEPluginChunk(_AChunk):
             chunk_class = _xSEChunkSTVR
         return chunk_class, chunk_type
 
-class _PluggyChunk(_AChunk):
-    """A single pluggy chunk, of the type that occurs in .pluggy files."""
+class _PluggyBlock(_AChunk):
+    """A single pluggy record block. This is the pluggy equivalent of xSE
+    chunks."""
     __slots__ = ('record_type',)
 
-    def __init__(self, ins):
-        self.record_type = unpack_byte(ins)
+    def __init__(self, record_type):
+        self.record_type = record_type
 
 #------------------------------------------------------------------------------
 # Files
@@ -865,8 +864,9 @@ class xSECosave(_ACosave):
 
 class PluggyCosave(_ACosave):
     """Represents a Pluggy cosave, with a .pluggy extension."""
-    chunk_type = _PluggyChunk
+    chunk_type = _PluggyBlock
     header_type = _PluggyHeader
+    __slots__ = ()
 
     def __init__(self, cosave_path):
         super(PluggyCosave, self).__init__(cosave_path)
