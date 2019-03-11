@@ -996,6 +996,10 @@ class xSECosave(_ACosave):
 class PluggyCosave(_ACosave):
     """Represents a Pluggy cosave, with a .pluggy extension."""
     header_type = _PluggyHeader
+    # Used to convert from block type int to block class
+    # See pluggy file format specification for how these map
+    _block_types = [_PluggyPluginBlock, _PluggyStringBlock, _PluggyArrayBlock,
+                    _PluggyNameBlock]
     __slots__ = ()
 
     def read_chunks(self, ins):
@@ -1010,20 +1014,13 @@ class PluggyCosave(_ACosave):
 
     def _get_block_type(self, record_type):
         """
-        Returns the matching block type for the specified record type.
+        Returns the matching block type for the specified record type or raises
+        an informative error if the record type is not known.
 
         :param record_type: An integer representing the read record type.
         """
-        # See pluggy specification for how these map
-        # TODO(inf) Use a dict for this
-        if record_type == 0:
-            return _PluggyPluginBlock
-        elif record_type == 1:
-            return _PluggyStringBlock
-        elif record_type == 2:
-            return _PluggyArrayBlock
-        elif record_type == 3:
-            return _PluggyNameBlock
+        if record_type < len(self._block_types):
+            return self._block_types[record_type]
         else:
             raise FileError(self.cosave_path.tail, u'Unknown pluggy record'
                                                    u'block type %u.' %
