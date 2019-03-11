@@ -26,6 +26,7 @@ extender plugin chunks which, in turn are composed of chunks. We need to
 read them to log stats and write them to remap espm masters. We only handle
 renaming of the masters of the xSE plugin chunk itself and of the Pluggy chunk.
 """
+import string
 from ..bolt import sio, GPath, decode, encode, unpack_string, unpack_int, \
     unpack_short, unpack_4s, unpack_byte, unpack_str16, struct_pack, \
     struct_unpack, deprint
@@ -591,8 +592,7 @@ class _xSEPluginChunk(_AChunk):
     __slots__ = ('plugin_signature', 'chunks')
 
     def __init__(self, ins):
-        self.plugin_signature = unpack_4s(ins)[::-1] # aka opcodeBase on pre
-                                                     # papyrus
+        self.plugin_signature = unpack_int(ins) # aka opcodeBase on pre papyrus
         num_chunks = unpack_int(ins)
         unpack_int(ins) # discard the size, we'll generate it when writing
         self.chunks = []
@@ -606,7 +606,7 @@ class _xSEPluginChunk(_AChunk):
 
     def write_chunk(self, out):
         # Don't forget to reverse signature when writing again
-        _pack(out, '=4s', self.plugin_signature[::-1])
+        _pack(out, '=I', self.plugin_signature)
         _pack(out, '=I', len(self.chunks))
         _pack(out, '=I', self.chunk_length())
         for chunk in self.chunks:
@@ -724,24 +724,63 @@ class xSECosave(_ACosave):
 
     def dump_cosave(self, log, save_masters):
         self.cosave_header.dump_header(log, save_masters)
-        #--Plugins
-        for plugin_ch in self.cosave_chunks: # type: _xSEPluginChunk
-            plugin_sig = plugin_ch.plugin_signature
-            log.setHeader(_(u'Plugin signature: %s, Total chunks: %u') % (
-                decode(plugin_sig), len(plugin_ch.chunks),))
-            log(u'=' * 80)
+        for plugin_chunk in self.cosave_chunks: # type: _xSEPluginChunk
+            plugin_sig = self._get_plugin_signature(plugin_chunk)
+            log.setHeader(_(u'Plugin: %s, Total chunks: %u') % (
+                plugin_sig, len(plugin_chunk.chunks)))
+            log(u'=' * 40)
             log(_(u'  Type  Ver   Size'))
-            log(u'-' * 80)
-            espMap = {}
-            for ch in plugin_ch.chunks: # type: _xSEChunk
-                chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
-                if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
-                    log(u'  %4s  %-4u  %08X' % (
-                        ch.chunk_type, ch.chunk_version, ch.chunk_length()))
-                else:
-                    log(u'  %04X  %-4u  %08X' % (
-                        chunkTypeNum, ch.chunk_version, ch.chunk_length()))
-                    ch.log_chunk(log, save_masters, espMap)
+            log(u'-' * 40)
+            # espMap = {}
+            # for ch in plugin_ch.chunks: # type: _xSEChunk
+            #     chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
+            #     if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
+            #         log(u'  %4s  %-4u  %08X' % (
+            #             ch.chunk_type, ch.chunk_version, ch.chunk_length()))
+            #     else:
+            #         log(u'  %04X  %-4u  %08X' % (
+            #             chunkTypeNum, ch.chunk_version, ch.chunk_length()))
+            #         ch.log_chunk(log, save_masters, espMap)
+
+    def _get_plugin_signature(self, plugin_chunk):
+        """
+        Creates a human-readable version of the specified plugin chunk's
+        signature.
+
+        :param plugin_chunk: The plugin chunk whose signature should be
+                             processed.
+        :return: A human-readable version of the plugin chunk's signature.
+        """
+        raw_sig = plugin_chunk.plugin_signature
+        if raw_sig == self._xse_signature:
+            readable_sig = self.cosave_header.savefile_tag
+        elif raw_sig == self._pluggy_signature:
+            readable_sig = u'Pluggy'
+        else:
+            # Reverse the result since xSE writes signatures backwards
+            # TODO(inf) There has to be a better way to do this
+            readable_sig = (self._to_unichr(raw_sig, 0) +
+                            self._to_unichr(raw_sig, 8) +
+                            self._to_unichr(raw_sig, 16) +
+                            self._to_unichr(raw_sig, 24))[::-1]
+        return readable_sig + u' (0x%X)' % raw_sig
+
+    @staticmethod
+    def _to_unichr(target_int, shift):
+        """
+        Small helper method for _get_plugin_signature that interprets the
+        result of shifting the specified integer by the specified shift amount
+        and masking with 0xFF as a unichr. Additionally, if the result of that
+        operation is not printable, an empty string is returned instead.
+
+        :param target_int: The integer to shift and mask.
+        :param shift: By how much (in bits) to shift.
+        :return: The unichr representation of the result, or an empty string.
+        """
+        temp_char = unichr(target_int >> shift & 0xFF)
+        if temp_char not in string.printable:
+            temp_char = u''
+        return temp_char
 
 class PluggyCosave(_ACosave):
     """Represents a Pluggy cosave, with a .pluggy extension."""
