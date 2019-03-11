@@ -739,10 +739,17 @@ class _ACosave(_Dumpable):
         self.cosave_path = cosave_path
         with cosave_path.open('rb') as ins:
             self.cosave_header = self.header_type(ins, cosave_path)
-            self.cosave_chunks = self.load_chunks(ins)
+            self.cosave_chunks = self.read_chunks(ins)
 
-    def load_chunks(self, ins):
-        pass
+    def read_chunks(self, ins):
+        """
+        Reads the chunks of this cosave. For xSE cosaves, these are the 'plugin
+        chunks'. For pluggy cosaves, these are the 'record blocks'.
+
+        :param ins: The input stream to read from.
+        :return: A list of all the chunks of this cosave.
+        """
+        raise AbstractError()
 
     def write_cosave(self, out_path):
         """
@@ -773,12 +780,12 @@ class xSECosave(_ACosave):
     _xse_signature = 0x1400 # signature (aka opcodeBase) of xSE plugin itself
     __slots__ = ()
 
-    def load_chunks(self, ins):
-        loaded_chunks = []
+    def read_chunks(self, ins):
+        read_chunks = []
         my_header = self.cosave_header # type: _xSEHeader
         for x in xrange(my_header.num_plugin_chunks):
-            loaded_chunks.append(self.chunk_type(ins))
-        return loaded_chunks
+            read_chunks.append(self.chunk_type(ins))
+        return read_chunks
 
     def map_masters(self, master_renames_dict):
         for plugin_chunk in self.cosave_chunks:
