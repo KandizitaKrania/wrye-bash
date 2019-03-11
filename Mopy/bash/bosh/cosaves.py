@@ -717,7 +717,7 @@ class _xSEPluginChunk(_AChunk):
             chunk_class = _xSEChunkSTVR
         return chunk_class, chunk_type
 
-class _PluggyBlock(_AChunk):
+class _PluggyBlock(_AChunk, _Dumpable):
     """A single pluggy record block. This is the pluggy equivalent of xSE
     chunks."""
     __slots__ = ('record_type',)
@@ -864,12 +864,29 @@ class PluggyCosave(_ACosave):
     header_type = _PluggyHeader
     __slots__ = ()
 
-    def __init__(self, cosave_path):
-        super(PluggyCosave, self).__init__(cosave_path)
-        self.version = None
-        self._plugins = None
-        self.other = None
-        self.valid = False
+    def read_chunks(self, ins):
+        read_chunks = []
+        while True:
+            raw_type = ins.read(1)
+            if not raw_type: break # EOF
+            record_type = struct_unpack('=B', raw_type)
+            block_type = self._get_block_type(record_type)
+            read_chunks.append(block_type(record_type))
+        return read_chunks
+
+    def _get_block_type(self, record_type):
+        """
+        Returns the matching block type for the specified record type.
+
+        :param record_type: An integer representing the read record type.
+        """
+        # See pluggy specification for how these map
+        if record_type == 0:
+            return _PluggyPluginBlock
+        else:
+            raise FileError(self.cosave_path.tail, u'Unknown pluggy record'
+                                                   u'block type %u.' %
+                            record_type)
 
     def mapMasters(self,masterMap):
         """Update plugin names according to masterMap."""
