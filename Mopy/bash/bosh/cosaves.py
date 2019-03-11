@@ -62,6 +62,7 @@ class _Dumpable(object):
         :param save_masters: A list of the masters of the save file that this
                              object's cosave belongs to.
         """
+        raise AbstractError()
 
 #------------------------------------------------------------------------------
 # Headers
