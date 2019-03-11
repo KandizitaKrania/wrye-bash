@@ -731,16 +731,16 @@ class xSECosave(_ACosave):
             log(u'=' * 40)
             log(_(u'  Type  Ver   Size'))
             log(u'-' * 40)
-            # espMap = {}
-            # for ch in plugin_ch.chunks: # type: _xSEChunk
-            #     chunkTypeNum, = struct_unpack('=I', ch.chunk_type)
-            #     if ch.chunk_type[0] >= ' ' and ch.chunk_type[3] >= ' ': # HUH ?
-            #         log(u'  %4s  %-4u  %08X' % (
-            #             ch.chunk_type, ch.chunk_version, ch.chunk_length()))
-            #     else:
-            #         log(u'  %04X  %-4u  %08X' % (
-            #             chunkTypeNum, ch.chunk_version, ch.chunk_length()))
-            #         ch.log_chunk(log, save_masters, espMap)
+            espMap = {}
+            for chunk in plugin_chunk.chunks: # type: _xSEChunk
+                chunkTypeNum, = struct_unpack('=I', chunk.chunk_type)
+                if chunk.chunk_type[0] >= ' ' and chunk.chunk_type[3] >= ' ': # HUH ?
+                    log(u'  %4s  %-4u  %08X' % (
+                        chunk.chunk_type, chunk.chunk_version, chunk.chunk_length()))
+                else:
+                    log(u'  %04X  %-4u  %08X' % (
+                        chunkTypeNum, chunk.chunk_version, chunk.chunk_length()))
+                    chunk.log_chunk(log, save_masters, espMap)
 
     def _get_plugin_signature(self, plugin_chunk):
         """
