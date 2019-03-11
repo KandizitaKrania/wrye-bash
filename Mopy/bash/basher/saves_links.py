@@ -758,15 +758,15 @@ class Save_Stats(OneItemLink):
 #------------------------------------------------------------------------------
 class Save_StatObse(AppendableLink, OneItemLink):
     """Dump .obse records."""
-    _text = _(u'%s Statistics') % bush.game.se.cosave_ext.lower()
-    _help = _(u'Dump %s records') % bush.game.se.cosave_ext.lower()
+    _text = _(u'Dump %s Contents') % bush.game.se.cosave_ext.lower()
+    _help = _(u'Dumps contents of associated %s cosave into a log.') % \
+            bush.game.se.se_abbrev
 
     def _append(self, window): return bool(bush.game.se.se_abbrev)
 
     def _enable(self):
         if not super(Save_StatObse, self)._enable(): return False
-        cosave = self._selected_info.get_se_cosave_path()
-        return cosave.exists()
+        return self._selected_info.get_xse_cosave_path().exists()
 
     def Execute(self):
         with balt.BusyCursor():

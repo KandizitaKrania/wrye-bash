@@ -969,6 +969,8 @@ from . import cosaves
 class SaveInfo(FileInfo):
     # The xSE cosave that may come with this save file. Lazily initialized.
     _xse_cosave = None
+    # The Pluggy cosave that may come with this save file. Lazily initialized.
+    _pluggy_cosave = None
 
     def cosave_type(self): return cosaves.get_cosave_type(bush.game.fsName)
 
@@ -1025,7 +1027,7 @@ class SaveInfo(FileInfo):
         """Return strings expressing whether cosaves exist and are correct."""
         cPluggy, cObse = (u'', u'')
         pluggy = self.name.root + u'.pluggy'
-        obse = self.get_se_cosave_path()
+        obse = self.get_xse_cosave_path()
         if pluggy.exists():
             cPluggy = u'XP'[abs(pluggy.mtime - self.mtime) < 10]
         if obse and obse.exists():
@@ -1041,7 +1043,7 @@ class SaveInfo(FileInfo):
     def get_xse_cosave(self):
         """:rtype: cosaves.xSECosave"""
         if self._xse_cosave is None:
-            cosave_path = self.get_se_cosave_path()
+            cosave_path = self.get_xse_cosave_path()
             if cosave_path is None: return None
             try:
                 cosave_constructor = self.cosave_type()
@@ -1053,7 +1055,7 @@ class SaveInfo(FileInfo):
                 return None
         return self._xse_cosave
 
-    def get_se_cosave_path(self):
+    def get_xse_cosave_path(self):
         if self.cosave_type is None: return None
         return self.getPath().root + bush.game.se.cosave_ext
 
