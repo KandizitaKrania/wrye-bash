@@ -407,6 +407,30 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             log(u'    - [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
+class _xSEChunkLIMD(_xSEModListChunk):
+    """An LIMD (Light Mod Files) chunk. Available for SKSE64 and F4SE. This is
+    the new version of the LMOD chunk. In constrast to LMOD, LIMD can store
+    more than 255 light mods (up to 65535). See Core_Serialization.cpp or
+    InternalSerialization.cpp for its creation (no specification available)."""
+    _fully_decoded = True
+    __slots__ = ()
+
+    def __init__(self, ins, chunk_type):
+        super(_xSEChunkLIMD, self).__init__(ins, chunk_type)
+        self.read_mod_names(ins, unpack_short(ins))
+
+    def write_chunk(self, out):
+        super(_xSEChunkLIMD, self).write_chunk(out)
+        _pack(out, '=H', len(self.mod_names))
+        self.write_mod_names(out)
+
+    def chunk_length(self):
+        return 2 + super(_xSEChunkLIMD, self).chunk_length()
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u loaded light mods:') % len(self.mod_names))
+        super(_xSEChunkLIMD, self).dump_to_log(log, save_masters)
+
 class _xSEChunkMODS(_xSEModListChunk):
     """A MODS (Mod Files) record. Available for all script extenders. See
     Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
@@ -652,6 +676,8 @@ class _xSEPluginChunk(_AChunk):
         chunk_class = _xSEChunk
         if chunk_type == 'ARVR':
             chunk_class = _xSEChunkARVR
+        elif chunk_type == 'LIMD':
+            chunk_class = _xSEChunkLIMD
         elif chunk_type == 'MODS':
             chunk_class = _xSEChunkMODS
         elif chunk_type == 'STVR':
