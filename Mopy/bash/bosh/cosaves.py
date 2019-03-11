@@ -797,12 +797,12 @@ class xSECosave(_ACosave):
             log.setHeader(_(u'Plugin: %s, Total chunks: %u') % (
                 plugin_sig, len(plugin_chunk.chunks)))
             log(u'=' * 40)
-            log(_(u'  Type  Version Size (in bytes)'))
+            log(_(u'  Type   Version  Size (in bytes)'))
             log(u'-' * 40)
             for chunk in plugin_chunk.chunks: # type: _xSEChunk
-                log(u'  %4s  %-4u     %u' % (chunk.chunk_type,
-                                             chunk.chunk_version,
-                                             chunk.chunk_length()))
+                log(u'  %4s  %-4u        %u' % (chunk.chunk_type,
+                                                chunk.chunk_version,
+                                                chunk.chunk_length()))
                 if isinstance(chunk, _Dumpable):
                     chunk.dump_to_log(log, save_masters)
 
