@@ -123,11 +123,11 @@ class _xSEHeader(_AHeader):
 
     def dump_to_log(self, log, save_masters):
         super(_xSEHeader, self).dump_to_log(log, save_masters)
-        log(_(u'  Format version:   %08X') % self.format_version)
+        log(_(u'  Format version:   0x%08X') % self.format_version)
         log(_(u'  %s version:      %u.%u') % (self.savefile_tag,
                                               self.se_version,
                                               self.se_minor_version))
-        log(_(u'  Game version:     %08X') % self.game_version)
+        log(_(u'  Game version:     0x%08X') % self.game_version)
 
 class _PluggyHeader(_AHeader):
     """Header for pluggy cosaves. Just checks save file tag and version."""
@@ -156,7 +156,7 @@ class _PluggyHeader(_AHeader):
 
     def dump_to_log(self, log, save_masters):
         super(_PluggyHeader, self).dump_to_log(log, save_masters)
-        log(_(u'  Pluggy file format version: %08X') %
+        log(_(u'  Pluggy file format version: 0x%08X') %
             self._max_supported_version)
 
 #------------------------------------------------------------------------------
@@ -325,7 +325,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
                 _pack(out, '=B', reference)
         _pack(out, '=I', len(self.elements))
         for element in self.elements:
-            key, element_type, stored_data = element[0], element[1], element[2]
+            key = element[0]
             if self.key_type == 1:
                 _pack(out, '=d', key)
             elif self.key_type == 3:
@@ -333,7 +333,9 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             else:
                 raise RuntimeError(u'Unknown or unsupported key type %u.' %
                                    self.key_type)
+            element_type = element[1]
             _pack(out, '=B', element_type)
+            stored_data = element[2]
             if element_type == 1:
                 _pack(out, '=d', stored_data)
             elif element_type == 2:
@@ -406,7 +408,7 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             if dataType == 1:
                 dataStr = u'%f' % stored_data
             elif dataType == 2:
-                dataStr = u'%08X' % stored_data
+                dataStr = u'0x%08X' % stored_data
             elif dataType == 3:
                 dataStr = decode(stored_data)
             elif dataType == 4:
@@ -699,11 +701,9 @@ class _PluggyPluginBlock(_PluggyBlock, _Remappable):
     def write_chunk(self, out):
         _pack(out, '=I', len(self.plugins))
         for plugin in self.plugins:
-            pluggy_id = plugin[0]
-            game_id = plugin[1]
             plugin_name = plugin[2]
-            _pack(out, '=B', pluggy_id)
-            _pack(out, '=B', game_id)
+            _pack(out, '=B', plugin[0])
+            _pack(out, '=B', plugin[1])
             _pack(out, '=I', len(plugin_name))
             out.write(plugin_name)
 
@@ -741,28 +741,22 @@ class _PluggyStringBlock(_PluggyBlock):
     def write_chunk(self, out):
         _pack(out, '=I', len(self.stored_strings))
         for stored_string in self.stored_strings:
-            string_id = stored_string[0]
-            plugin_index = stored_string[1]
-            string_flags = stored_string[2]
+            _pack(out, '=I', stored_string[0])
+            _pack(out, '=B', stored_string[1])
+            _pack(out, '=B', stored_string[2])
             string_data = stored_string[3]
-            _pack(out, '=I', string_id)
-            _pack(out, '=B', plugin_index)
-            _pack(out, '=B', string_flags)
             _pack(out, '=I', len(string_data))
             out.write(string_data)
 
     def dump_to_log(self, log, save_masters):
         log(_(u'   %u stored strings:') % len(self.stored_strings))
         for stored_string in self.stored_strings:
-            string_id = stored_string[0]
+            log(_(u'    - ID    : %u') % stored_string[0])
             plugin_index = stored_string[1]
-            string_flags = stored_string[2]
-            string_data = stored_string[3]
-            log(_(u'    - ID    : %u') % string_id)
             log(_(u'      Owner : %02X (%s)') % (plugin_index,
                                                  save_masters[plugin_index]))
-            log(_(u'      Flags : %u') % string_flags)
-            log(_(u'      Data  : %s') % string_data)
+            log(_(u'      Flags : %u') % stored_string[2])
+            log(_(u'      Data  : %s') % stored_string[3])
 
 class _PluggyArrayBlock(_PluggyBlock):
     """An array records block of a pluggy cosave. Contains an array from a
@@ -800,17 +794,15 @@ class _PluggyArrayBlock(_PluggyBlock):
         _pack(out, '=I', self.max_size)
         _pack(out, '=I', len(self.array_entries))
         for array_entry in self.array_entries:
-            entry_index = array_entry[0]
+            _pack(out, '=I', array_entry[0])
             entry_type = array_entry[1]
-            entry_data = array_entry[2]
-            _pack(out, '=I', entry_index)
             _pack(out, '=B', entry_type)
             if entry_type == 0:
-                _pack(out, '=i', entry_data)
+                _pack(out, '=i', array_entry[2])
             elif entry_type == 1:
-                _pack(out, '=I', entry_data)
+                _pack(out, '=I', array_entry[2])
             elif entry_type == 2:
-                _pack(out, '=f', entry_data)
+                _pack(out, '=f', array_entry[2])
             else:
                 raise RuntimeError(u'Unknown or unsupported entry type %u.' %
                                    entry_type)
@@ -824,15 +816,13 @@ class _PluggyArrayBlock(_PluggyBlock):
         log(_(u'    Cur Size: %u') % len(self.array_entries))
         log(_(u'    Contents:'))
         for array_entry in self.array_entries:
-            entry_index = array_entry[0]
             entry_type = array_entry[1]
-            entry_data = array_entry[2]
             if entry_type == 0:
-                log(u'     %u: %d' % (entry_index, entry_data))
+                log(u'     %u: %d' % (array_entry[0], array_entry[2]))
             elif entry_type == 1:
-                log(u'     %u: 0x%08X' % (entry_index, entry_data))
+                log(u'     %u: 0x%08X' % (array_entry[0], array_entry[2]))
             elif entry_type == 2:
-                log(u'     %u: %f' % (entry_index, entry_data))
+                log(u'     %u: %f' % (array_entry[0], array_entry[2]))
 
 class _PluggyNameBlock(_PluggyBlock):
     """A name records block of a pluggy cosave. Contains one or more names that
