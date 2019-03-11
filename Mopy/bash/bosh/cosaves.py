@@ -664,6 +664,9 @@ class _xSEPluginChunk(_AChunk):
     @staticmethod
     def _get_chunk_type(ins):
         # The chunk type strings are reversed in the cosaves
+        # TODO(inf) Use a dict for these
+        # TODO(inf) Additionally, post 308 we may want to reorganize these into
+        # a records.py-like structure
         chunk_type = unpack_4s(ins)[::-1]
         chunk_class = _xSEChunk
         if chunk_type == 'ARVR':
@@ -705,7 +708,9 @@ class _PluggyPluginBlock(_PluggyBlock, _Remappable):
     def write_chunk(self, out):
         _pack(out, '=I', len(self.plugins))
         for plugin in self.plugins:
-            pluggy_id, game_id, plugin_name = plugin[0], plugin[1], plugin[2]
+            pluggy_id = plugin[0]
+            game_id = plugin[1]
+            plugin_name = plugin[2]
             _pack(out, '=B', pluggy_id)
             _pack(out, '=B', game_id)
             _pack(out, '=I', len(plugin_name))
@@ -745,8 +750,10 @@ class _PluggyStringBlock(_PluggyBlock):
     def write_chunk(self, out):
         _pack(out, '=I', len(self.stored_strings))
         for stored_string in self.stored_strings:
-            string_id, plugin_index = stored_string[0], stored_string[1]
-            string_flags, string_data = stored_string[2], stored_string[3]
+            string_id = stored_string[0]
+            plugin_index = stored_string[1]
+            string_flags = stored_string[2]
+            string_data = stored_string[3]
             _pack(out, '=I', string_id)
             _pack(out, '=B', plugin_index)
             _pack(out, '=B', string_flags)
@@ -756,8 +763,10 @@ class _PluggyStringBlock(_PluggyBlock):
     def dump_to_log(self, log, save_masters):
         log(_(u'   %u stored strings:') % len(self.stored_strings))
         for stored_string in self.stored_strings:
-            string_id, plugin_index = stored_string[0], stored_string[1]
-            string_flags, string_data = stored_string[2], stored_string[3]
+            string_id = stored_string[0]
+            plugin_index = stored_string[1]
+            string_flags = stored_string[2]
+            string_data = stored_string[3]
             log(_(u'    - ID    : %u') % string_id)
             log(_(u'      Owner : %02X (%s)') % (plugin_index,
                                                  save_masters[plugin_index]))
@@ -824,7 +833,8 @@ class _PluggyArrayBlock(_PluggyBlock):
         log(_(u'    Cur Size: %u') % len(self.array_entries))
         log(_(u'    Contents:'))
         for array_entry in self.array_entries:
-            entry_index, entry_type = array_entry[0], array_entry[1]
+            entry_index = array_entry[0]
+            entry_type = array_entry[1]
             entry_data = array_entry[2]
             if entry_type == 0:
                 log(u'     %u: %d' % (entry_index, entry_data))
@@ -989,6 +999,7 @@ class PluggyCosave(_ACosave):
         :param record_type: An integer representing the read record type.
         """
         # See pluggy specification for how these map
+        # TODO(inf) Use a dict for this
         if record_type == 0:
             return _PluggyPluginBlock
         elif record_type == 1:
