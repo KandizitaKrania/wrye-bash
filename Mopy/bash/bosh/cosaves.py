@@ -532,13 +532,7 @@ class _xSEPluggyChunk(_xSEChunk):
         elif chunkTypeNum == 4:
             pass
         elif chunkTypeNum == 5:
-            #--Pluggy TypeScr
-            log(_(u'    Pluggy ScreenSize'))
-            #UNTESTED - uncomment following line to skip this record type
-            #continue
-            scrW, scrH, = _unpack(ins, '=II', 8)
-            log(_(u'      Width  : %u') % scrW)
-            log(_(u'      Height : %u') % scrH)
+            pass
         elif chunkTypeNum == 6:
             #--Pluggy TypeHudS
             log(u'    ' + _(u'Pluggy HudS'))
@@ -859,6 +853,25 @@ class _PluggyNameBlock(_PluggyBlock):
                 printable_name = printable_name + ch
             log(_(u'      Name  : %s') % decode(printable_name))
 
+class _PluggyScreenInfoBlock(_PluggyBlock):
+    """A screen information record block. This is an optional block and, if
+    present, follows directly after the name block. Note that this block will
+    only ever be present if there is at least one HudS or HudT block."""
+    __slots__ = ('screen_width', 'screen_height')
+
+    def __init__(self, ins, record_type):
+        super(_PluggyScreenInfoBlock, self).__init__(record_type)
+        self.screen_width = unpack_int(ins)
+        self.screen_height = unpack_int(ins)
+
+    def write_chunk(self, out):
+        _pack(out, '=I', self.screen_width)
+        _pack(out, '=I', self.screen_height)
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   Width : %u') % self.screen_width)
+        log(_(u'   Height: %u') % self.screen_height)
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -999,7 +1012,7 @@ class PluggyCosave(_ACosave):
     # Used to convert from block type int to block class
     # See pluggy file format specification for how these map
     _block_types = [_PluggyPluginBlock, _PluggyStringBlock, _PluggyArrayBlock,
-                    _PluggyNameBlock]
+                    _PluggyNameBlock, _PluggyScreenInfoBlock]
     __slots__ = ()
 
     def read_chunks(self, ins):
