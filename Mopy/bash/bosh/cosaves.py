@@ -220,6 +220,48 @@ class _xSEChunk(_AChunk):
         chunk_length = len(self.chunk_data)
         plugin_chunk.plugin_data_size += chunk_length - old_chunk_length # Todo Test
 
+class _xSEModListChunk(_xSEChunk, _Dumpable, _Remappable):
+    """An abstract class for chunks that contain a list of mods (e.g. MODS or
+    LIMD) """
+    __slots__ = ('mod_names',)
+
+    def read_mod_names(self, ins, mod_count):
+        """
+        Reads a list of mod names with length mod_count from the specified
+        input stream. The result is saved in the mod_names variable.
+
+        :param ins: The input stream to read from.
+        :param mod_count: The number of mod names to read.
+        """
+        self.mod_names = []
+        for x in xrange(mod_count):
+            name_len = unpack_short(ins)
+            self.mod_names.append(ins.read(name_len))
+
+    def write_mod_names(self, out):
+        """
+        Writes the saved list of mod names to the specified output stream.
+
+        :param out: The output stream to write to.
+        """
+        for mod_name in self.mod_names:
+            _pack(out, '=H', len(mod_name))
+            out.write(mod_name)
+
+    def chunk_length(self):
+        # 2 bytes per mod name (for the length)
+        total_len = len(self.mod_names) * 2
+        for mod_name in self.mod_names:
+            total_len += len(mod_name)
+        return total_len
+
+    def dump_to_log(self, log, save_masters):
+        for mod_name in self.mod_names:
+            log(_(u'    - %s') % mod_name)
+
+    def remap_plugins(self, plugin_renames):
+        self.mod_names = [plugin_renames.get(x, x) for x in self.mod_names]
+
 class _xSEChunkARVR(_xSEChunk, _Dumpable):
     """An ARVR (Array Variable) record. Only available in OBSE and NVSE. See
     ArrayVar.h in xSE's source code for the specification."""
@@ -365,42 +407,28 @@ class _xSEChunkARVR(_xSEChunk, _Dumpable):
             log(u'    - [%s]:%s = %s' % (keyStr, (
                 u'BAD', u'NUM', u'REF', u'STR', u'ARR')[dataType], dataStr))
 
-class _xSEChunkMODS(_xSEChunk, _Dumpable, _Remappable):
+class _xSEChunkMODS(_xSEModListChunk):
     """A MODS (Mod Files) record. Available for all script extenders. See
     Core_Serialization.cpp or InternalSerialization.cpp for its creation (no
     specification available)."""
     _fully_decoded = True
-    __slots__ = ('mod_names',)
+    __slots__ = ()
 
     def __init__(self, ins, chunk_type):
         super(_xSEChunkMODS, self).__init__(ins, chunk_type)
-        mod_count = unpack_byte(ins)
-        self.mod_names = []
-        for x in xrange(mod_count):
-            name_len = unpack_short(ins)
-            self.mod_names.append(ins.read(name_len))
+        self.read_mod_names(ins, unpack_byte(ins))
 
     def write_chunk(self, out):
         super(_xSEChunkMODS, self).write_chunk(out)
         _pack(out, '=B', len(self.mod_names))
-        for mod_name in self.mod_names:
-            _pack(out, '=H', len(mod_name))
-            out.write(mod_name)
+        self.write_mod_names(out)
 
     def chunk_length(self):
-        # One byte for the count, a short per mod name (for string length)
-        total_len = 1 + 2 * len(self.mod_names)
-        for mod_name in self.mod_names:
-            total_len += len(mod_name)
-        return total_len
+        return 1 + super(_xSEChunkMODS, self).chunk_length()
 
     def dump_to_log(self, log, save_masters):
         log(_(u'   %u loaded mods:') % len(self.mod_names))
-        for mod_name in self.mod_names:
-            log(_(u'    - %s') % mod_name)
-
-    def remap_plugins(self, plugin_renames):
-        self.mod_names = [plugin_renames.get(x, x) for x in self.mod_names]
+        super(_xSEChunkMODS, self).dump_to_log(log, save_masters)
 
 class _xSEChunkSTVR(_xSEChunk, _Dumpable):
     """An STVR (String Variable) record. Only available in OBSE and NVSE. See
