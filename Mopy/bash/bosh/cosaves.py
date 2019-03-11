@@ -601,7 +601,7 @@ class _xSEPluginChunk(_AChunk):
     def __init__(self, ins):
         self.plugin_signature = unpack_int(ins) # aka opcodeBase on pre papyrus
         num_chunks = unpack_int(ins)
-        unpack_int(ins) # discard the size, we'll generate it when writing
+        ins.read(4) # discard the size, we'll generate it when writing
         self.chunks = []
         for x in xrange(num_chunks):
             ch_class, ch_type = self._get_chunk_type(ins)
@@ -726,8 +726,8 @@ class _PluggyStringBlock(_PluggyBlock):
         for stored_string in self.stored_strings:
             log(_(u'    - ID    : %u') % stored_string[0])
             plugin_index = stored_string[1]
-            log(_(u'      Owner : %02X (%s)') % (plugin_index,
-                                                 save_masters[plugin_index]))
+            log(_(u'      Owner : %s (%02X)') % (save_masters[plugin_index],
+                                                 plugin_index))
             log(_(u'      Flags : %u') % stored_string[2])
             log(_(u'      Data  : %s') % stored_string[3])
 
@@ -782,8 +782,8 @@ class _PluggyArrayBlock(_PluggyBlock):
 
     def dump_to_log(self, log, save_masters):
         log(_(u'   Pluggy Array #%u') % self.array_id)
-        log(_(u'    Owner   : %02X (%s)') % (self.plugin_index,
-                                           save_masters[self.plugin_index]))
+        log(_(u'    Owner   : %s (%02X)') % (save_masters[self.plugin_index],
+                                             self.plugin_index))
         log(_(u'    Flags   : %u') % self.array_flags)
         log(_(u'    Max Size: %u') % self.max_size)
         log(_(u'    Cur Size: %u') % len(self.array_entries))
@@ -1121,7 +1121,7 @@ class PluggyCosave(_ACosave):
             type, = _unpack(ins, '=B', 1)
             if type != 0:
                 raise FileError(self.cosave_path.tail,
-                                u'Expected plugins record, but got %d.' % type)
+                                u'Expected plugins record, but got %u.' % type)
             count, = _unpack(ins, '=I', 4)
             for x in range(count):
                 espid,index,modLen = _unpack(ins, '=2BI', 6)
