@@ -522,19 +522,7 @@ class _xSEPluggyChunk(_xSEChunk):
         ins = sio(self.chunk_data)
         chunkTypeNum, = struct_unpack('=I', self.chunk_type)
         if chunkTypeNum == 1:
-            #--Pluggy TypeESP
-            log(_(u'    Pluggy ESPs'))
-            log(_(u'    EID   ID    Name'))
-            while ins.tell() < len(self.chunk_data):
-                if self.chunk_version == 2:
-                    espId, modId, = _unpack(ins, '=BB', 2)
-                    log(u'    %02X    %02X' % (espId, modId))
-                    espMap[modId] = espId
-                else:  #elif self.chunk_version == 1:
-                    espId, modId, modNameLen, = _unpack(ins, '=BBI', 6)
-                    modName = ins.read(modNameLen)
-                    log(u'    %02X    %02X    %s' % (espId, modId, modName))
-                    espMap[modId] = modName  # was [espId]
+            pass
         elif chunkTypeNum == 2:
             #--Pluggy TypeSTR
             log(_(u'    Pluggy String'))
@@ -724,6 +712,43 @@ class _PluggyBlock(_AChunk, _Dumpable):
 
     def __init__(self, record_type):
         self.record_type = record_type
+
+class _PluggyPluginBlock(_PluggyBlock, _Remappable):
+    """The plugin records block of a pluggy cosave. Contains a list of the
+    save's masters. This is the only required block, it must be present and is
+    always the first block in the cosave."""
+    __slots__ = ('plugins',)
+
+    def __init__(self, ins, record_type):
+        super(_PluggyPluginBlock, self).__init__(record_type)
+        plugin_count = unpack_int(ins)
+        self.plugins = []
+        for x in xrange(plugin_count):
+            pluggy_id = unpack_byte(ins)
+            game_id = unpack_byte(ins)
+            plugin_name = ins.read(unpack_int(ins))
+            self.plugins.append([pluggy_id, game_id, plugin_name])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', len(self.plugins))
+        for plugin in self.plugins:
+            pluggy_id, game_id, plugin_name = plugin[0], plugin[1], plugin[2]
+            _pack(out, '=B', pluggy_id)
+            _pack(out, '=B', game_id)
+            _pack(out, '=I', len(plugin_name))
+            out.write(plugin_name)
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u loaded mods:') % len(self.plugins))
+        log(_(u'   EID   ID    Name'))
+        log(u'-' * 40)
+        for plugin in self.plugins:
+            log(u'    %02X    %02X    %s' % (plugin[0], plugin[1], plugin[2]))
+
+    def remap_plugins(self, plugin_renames):
+        for plugin in self.plugins:
+            plugin_name = plugin[2]
+            plugin[2] = plugin_renames.get(plugin_name, plugin_name)
 
 #------------------------------------------------------------------------------
 # Files
