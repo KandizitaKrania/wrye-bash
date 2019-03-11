@@ -172,16 +172,6 @@ class _AChunk(object):
         :param out: The output stream to write to.
         """
 
-    # TODO(inf) This is a prime target for refactoring in 308+
-    # A lot of it could be auto-calculated
-    def chunk_length(self):
-        """
-        Calculates the length of this chunk, i.e. the length of the data that
-        follows after this chunk's header.
-
-        :return: The calculated length.
-        """
-
 class _xSEChunk(_AChunk):
     _espm_chunk_type = {'SDOM'}
     _fully_decoded = False
@@ -203,7 +193,16 @@ class _xSEChunk(_AChunk):
         if not self._fully_decoded:
             out.write(self.chunk_data)
 
+
+    # TODO(inf) This is a prime target for refactoring in 308+
+    # A lot of it could be auto-calculated
     def chunk_length(self):
+        """
+        Calculates the length of this chunk, i.e. the length of the data that
+        follows after this chunk's header.
+
+        :return: The calculated length.
+        """
         # No need to check _fully_decoded, subclasses *must* override this
         return len(self.chunk_data)
 
