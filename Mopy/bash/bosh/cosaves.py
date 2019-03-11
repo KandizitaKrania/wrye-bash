@@ -36,7 +36,7 @@ from ..exception import AbstractError, FileError
 #------------------------------------------------------------------------------
 # Utilities
 def _pack(buff, fmt, *args): buff.write(struct_pack(fmt, *args))
-# TODO(inf) Replace with unpack_many
+# TODO(inf) Drop entirely once done?
 def _unpack(ins, fmt, size): return struct_unpack(fmt, ins.read(size))
 
 class _Remappable(object):
@@ -63,6 +63,8 @@ class _Dumpable(object):
                              object's cosave belongs to.
         """
         raise AbstractError()
+
+# TODO(inf) Create _Writable and standardize writing as well
 
 #------------------------------------------------------------------------------
 # Headers
@@ -802,70 +804,79 @@ class _PluggyHudSBlock(_PluggyBlock):
     follows directly after the screen info block."""
     __slots__ = ('hud_entries',)
 
+    class _HudSEntry(_Dumpable):
+        """A single HudS entry. A HudS block contains one or more of these."""
+        __slots__ = ('hud_id', 'plugin_index', 'hud_flags', 'root_id',
+                     'file_name', 'show_mode', 'pos_x', 'pos_y', 'depth',
+                     'scale_x', 'scale_y', 'alpha', 'alignment', 'auto_scale')
+
+        def __init__(self, ins):
+            self.hud_id = unpack_int(ins)
+            self.plugin_index = unpack_byte(ins)
+            self.hud_flags = unpack_byte(ins)
+            self.root_id = unpack_byte(ins)
+            self.file_name = ins.read(unpack_int(ins))
+            self.show_mode = unpack_byte(ins)
+            self.pos_x = unpack_int(ins)
+            self.pos_y = unpack_int(ins)
+            self.depth = unpack_short(ins)
+            self.scale_x = unpack_int(ins)
+            self.scale_y = unpack_int(ins)
+            ins.read(4) # Discard, unused
+            self.alpha = unpack_byte(ins)
+            self.alignment = unpack_byte(ins)
+            self.auto_scale = unpack_byte(ins)
+
+        def write_entry(self, out):
+            _pack(out, '=I', self.hud_id)
+            _pack(out, '=B', self.plugin_index)
+            _pack(out, '=B', self.hud_flags)
+            _pack(out, '=B', self.root_id)
+            _pack(out, '=I', len(self.file_name))
+            out.write(self.file_name)
+            _pack(out, '=B', self.show_mode)
+            _pack(out, '=I', self.pos_x)
+            _pack(out, '=I', self.pos_y)
+            _pack(out, '=H', self.depth)
+            _pack(out, '=I', self.scale_x)
+            _pack(out, '=I', self.scale_y)
+            _pack(out, '=I', 0) # Need to write this, but it's unused
+            _pack(out, '=B', self.alpha)
+            _pack(out, '=B', self.alignment)
+            _pack(out, '=B', self.auto_scale)
+
+        def dump_to_log(self, log, save_masters):
+            log(_(u'    - HUD ID    : %u') % self.hud_id)
+            log(_(u'      Owner     : %s (%02X)') % (
+                save_masters[self.plugin_index], self.plugin_index))
+            log(_(u'      Flags     : %02X') % self.hud_flags)
+            log(_(u'      Root ID   : %u') % self.root_id)
+            log(_(u'      File      : %s') % self.file_name)
+            log(_(u'      Show Mode : %02X') % self.show_mode)
+            log(_(u'      X Position: %u') % self.pos_x)
+            log(_(u'      Y Position: %u') % self.pos_y)
+            log(_(u'      Depth     : %u') % self.depth)
+            log(_(u'      X Scale   : %u') % self.scale_x)
+            log(_(u'      Y Scale   : %u') % self.scale_y)
+            log(_(u'      Alpha     : %02X') % self.alpha)
+            log(_(u'      Alignment : %02X') % self.alignment)
+            log(_(u'      Auto-Scale: %02X') % self.auto_scale)
+
     def __init__(self, ins, record_type):
         super(_PluggyHudSBlock, self).__init__(record_type)
         self.hud_entries = []
         for x in xrange(unpack_int(ins)):
-            hud_id = unpack_int(ins)
-            plugin_index = unpack_byte(ins)
-            hud_flags = unpack_byte(ins)
-            root_id = unpack_byte(ins)
-            file_name = ins.read(unpack_int(ins))
-            show_mode = unpack_byte(ins)
-            pos_x = unpack_int(ins)
-            pos_y = unpack_int(ins)
-            depth = unpack_short(ins)
-            scale_x = unpack_int(ins)
-            scale_y = unpack_int(ins)
-            ins.read(4) # Discard, unused
-            alpha = unpack_byte(ins)
-            alignment = unpack_byte(ins)
-            auto_scale = unpack_byte(ins)
-            self.hud_entries.append([hud_id, plugin_index, hud_flags, root_id,
-                                     file_name, show_mode, pos_x, pos_y, depth,
-                                     scale_x, scale_y, alpha, alignment,
-                                     auto_scale])
+            self.hud_entries.append(self._HudSEntry(ins))
 
     def write_chunk(self, out):
         _pack(out, '=I', len(self.hud_entries))
         for hud_entry in self.hud_entries:
-            _pack(out, '=I', hud_entry[0])      # hud_id
-            _pack(out, '=B', hud_entry[1])      # plugin_index
-            _pack(out, '=B', hud_entry[2])      # hud_flags
-            _pack(out, '=B', hud_entry[3])      # root_id
-            file_name = hud_entry[4]
-            _pack(out, '=I', len(file_name))
-            out.write(file_name)
-            _pack(out, '=B', hud_entry[5])      # show_mode
-            _pack(out, '=I', hud_entry[6])      # pos_x
-            _pack(out, '=I', hud_entry[7])      # pos_y
-            _pack(out, '=H', hud_entry[8])      # depth
-            _pack(out, '=I', hud_entry[9])      # scale_x
-            _pack(out, '=I', hud_entry[10])     # scale_y
-            _pack(out, '=I', 0)                 # unused
-            _pack(out, '=B', hud_entry[11])     # alpha
-            _pack(out, '=B', hud_entry[12])     # alignment
-            _pack(out, '=B', hud_entry[13])     # auto_scale
+            hud_entry.write_entry(out)
 
     def dump_to_log(self, log, save_masters):
         log(_(u'   %u HUD Screen entries:') % len(self.hud_entries))
         for hud_entry in self.hud_entries:
-            log(_(u'    - HUD ID    : %u') % hud_entry[0])
-            plugin_index = hud_entry[1]
-            log(_(u'      Owner     : %s (%02X)') % (
-                save_masters[plugin_index], plugin_index))
-            log(_(u'      Flags     : %02X') % hud_entry[2])
-            log(_(u'      Root ID   : %u') % hud_entry[3])
-            log(_(u'      File      : %s') % hud_entry[4])
-            log(_(u'      Show Mode : %02X') % hud_entry[5])
-            log(_(u'      X Position: %u') % hud_entry[6])
-            log(_(u'      Y Position: %u') % hud_entry[7])
-            log(_(u'      Depth     : %u') % hud_entry[8])
-            log(_(u'      X Scale   : %u') % hud_entry[9])
-            log(_(u'      Y Scale   : %u') % hud_entry[10])
-            log(_(u'      Alpha     : %02X') % hud_entry[11])
-            log(_(u'      Alignment : %02X') % hud_entry[12])
-            log(_(u'      Auto-Scale: %02X') % hud_entry[13])
+            hud_entry.dump_to_log(log, save_masters)
 
 class _PluggyHudTBlock(_PluggyBlock):
     """A HUD Text records block. Contains information related to custom HUDs
@@ -873,105 +884,109 @@ class _PluggyHudTBlock(_PluggyBlock):
     after the HudS block."""
     __slots__ = ('hud_entries',)
 
+    class _HudTEntry(_Dumpable):
+        """A single HudT entry. A HudT block contains one or more of these."""
+        __slots__ = ('hud_id', 'plugin_index', 'hud_flags', 'show_mode',
+                     'pos_x', 'pos_y', 'depth', 'scale_x', 'scale_y', 'alpha',
+                     'alignment', 'auto_scale')
+
+        def __init__(self, ins):
+            self.hud_id = unpack_int(ins)
+            self.plugin_index = unpack_byte(ins)
+            self.hud_flags = unpack_byte(ins)
+            self.show_mode = unpack_byte(ins)
+            self.pos_x = unpack_int(ins)
+            self.pos_y = unpack_int(ins)
+            self.depth = unpack_short(ins)
+            self.scale_x = unpack_int(ins)
+            self.scale_y = unpack_int(ins)
+            ins.read(4) # Discard, unused
+            self.alpha = unpack_byte(ins)
+            self.alignment = unpack_byte(ins)
+            self.auto_scale = unpack_byte(ins)
+            self.hud_width = unpack_int(ins)
+            self.hud_height = unpack_int(ins)
+            self.text_format = unpack_byte(ins)
+            self.font_name = ins.read(unpack_int(ins))
+            self.text_data = ins.read(unpack_int(ins))
+            self.font_height = unpack_int(ins)
+            self.font_width = unpack_int(ins)
+            self.font_boldness = unpack_short(ins)
+            self.font_italic = unpack_byte(ins)
+            self.font_red = unpack_byte(ins)
+            self.font_green = unpack_byte(ins)
+            self.font_blue = unpack_byte(ins)
+
+        def write_entry(self, out):
+            _pack(out, '=I', self.hud_id)
+            _pack(out, '=B', self.plugin_index)
+            _pack(out, '=B', self.hud_flags)
+            _pack(out, '=I', self.pos_x)
+            _pack(out, '=I', self.pos_y)
+            _pack(out, '=H', self.depth)
+            _pack(out, '=I', self.scale_x)
+            _pack(out, '=I', self.scale_y)
+            _pack(out, '=I', 0) # Need to write this, but it's unused
+            _pack(out, '=B', self.alpha)
+            _pack(out, '=B', self.alignment)
+            _pack(out, '=B', self.auto_scale)
+            _pack(out, '=I', self.hud_width)
+            _pack(out, '=I', self.hud_height)
+            _pack(out, '=B', self.text_format)
+            _pack(out, '=I', len(self.font_name))
+            out.write(self.font_name)
+            _pack(out, '=I', len(self.text_data))
+            out.write(self.text_data)
+            _pack(out, '=I', self.font_height)
+            _pack(out, '=I', self.font_width)
+            _pack(out, '=H', self.font_boldness)
+            _pack(out, '=B', self.font_italic)
+            _pack(out, '=B', self.font_red)
+            _pack(out, '=B', self.font_green)
+            _pack(out, '=B', self.font_blue)
+
+        def dump_to_log(self, log, save_masters):
+            log(_(u'    - HUD ID    : %u') % self.hud_id)
+            log(_(u'      Owner     : %s (%02X)') % (
+                save_masters[self.plugin_index], self.plugin_index))
+            log(_(u'      Flags     : %02X') % self.hud_flags)
+            log(_(u'      Show Mode : %02X') % self.show_mode)
+            log(_(u'      X Position: %u') % self.pos_x)
+            log(_(u'      Y Position: %u') % self.pos_y)
+            log(_(u'      Depth     : %u') % self.depth)
+            log(_(u'      X Scale   : %u') % self.scale_x)
+            log(_(u'      Y Scale   : %u') % self.scale_y)
+            log(_(u'      Alpha     : %02X') % self.alpha)
+            log(_(u'      Alignment : %02X') % self.alignment)
+            log(_(u'      Auto-Scale: %02X') % self.auto_scale)
+            log(_(u'      HUD Width  : %u') % self.hud_width)
+            log(_(u'      HUD Height : %u') % self.hud_height)
+            log(_(u'      Text Format: %u') % self.text_format)
+            log(_(u'      Font Name  : %s') % self.font_name)
+            log(_(u'      Text Data  : %s') % self.text_data)
+            log(_(u'      Font Width : %u') % self.font_width)
+            log(_(u'      Font Height: %u') % self.font_height)
+            log(_(u'      Boldness   : %u') % self.font_boldness)
+            log(_(u'      Italic     : %u') % self.font_italic)
+            log(_(u'      Font Color : (%u, %u, %u)') % (self.font_red,
+                                                         self.font_green,
+                                                         self.font_blue))
+
     def __init__(self, ins, record_type):
         super(_PluggyHudTBlock, self).__init__(record_type)
         self.hud_entries = []
         for x in xrange(unpack_int(ins)):
-            hud_id = unpack_int(ins)
-            plugin_index = unpack_byte(ins)
-            hud_flags = unpack_byte(ins)
-            show_mode = unpack_byte(ins)
-            pos_x = unpack_int(ins)
-            pos_y = unpack_int(ins)
-            depth = unpack_short(ins)
-            scale_x = unpack_int(ins)
-            scale_y = unpack_int(ins)
-            ins.read(4) # Discard, unused
-            alpha = unpack_byte(ins)
-            alignment = unpack_byte(ins)
-            auto_scale = unpack_byte(ins)
-            hud_width = unpack_int(ins)
-            hud_height = unpack_int(ins)
-            text_format = unpack_byte(ins)
-            font_name = ins.read(unpack_int(ins))
-            text_data = ins.read(unpack_int(ins))
-            font_height = unpack_int(ins)
-            font_width = unpack_int(ins)
-            font_boldness = unpack_short(ins)
-            font_italic = unpack_byte(ins)
-            font_red = unpack_byte(ins)
-            font_green = unpack_byte(ins)
-            font_blue = unpack_byte(ins)
-            self.hud_entries.append([hud_id, plugin_index, hud_flags,
-                                     show_mode, pos_x, pos_y, depth, scale_x,
-                                     scale_y, alpha, alignment, auto_scale,
-                                     hud_width, hud_height, text_format,
-                                     font_name, text_data, font_height,
-                                     font_width, font_boldness, font_italic,
-                                     font_red, font_green, font_blue])
+            self.hud_entries.append(self._HudTEntry(ins))
 
     def write_chunk(self, out):
         _pack(out, '=I', len(self.hud_entries))
         for hud_entry in self.hud_entries:
-            _pack(out, '=I', hud_entry[0])  # hud_id
-            _pack(out, '=B', hud_entry[1])  # plugin_index
-            _pack(out, '=B', hud_entry[2])  # hud_flags
-            _pack(out, '=B', hud_entry[3])  # show_mode
-            _pack(out, '=I', hud_entry[4])  # pos_x
-            _pack(out, '=I', hud_entry[5])  # pos_y
-            _pack(out, '=H', hud_entry[6])  # depth
-            _pack(out, '=I', hud_entry[7])  # scale_x
-            _pack(out, '=I', hud_entry[8])  # scale_y
-            _pack(out, '=I', 0)             # unused
-            _pack(out, '=B', hud_entry[9])  # alpha
-            _pack(out, '=B', hud_entry[10]) # alignment
-            _pack(out, '=B', hud_entry[11]) # auto_scale
-            _pack(out, '=I', hud_entry[12]) # hud_width
-            _pack(out, '=I', hud_entry[13]) # hud_height
-            _pack(out, '=B', hud_entry[14]) # text_format
-            font_name = hud_entry[15]
-            _pack(out, '=I', len(font_name))
-            out.write(font_name)
-            text_data = hud_entry[16]
-            _pack(out, '=I', len(text_data))
-            out.write(text_data)
-            _pack(out, '=I', hud_entry[17]) # font_height
-            _pack(out, '=I', hud_entry[18]) # font_width
-            _pack(out, '=H', hud_entry[19]) # font_boldness
-            _pack(out, '=B', hud_entry[20]) # font_italic
-            _pack(out, '=B', hud_entry[21]) # font_red
-            _pack(out, '=B', hud_entry[22]) # font_green
-            _pack(out, '=B', hud_entry[23]) # font_blue
+            hud_entry.write_entry(out)
 
     def dump_to_log(self, log, save_masters):
         log(_(u'   %u HUD Text entries:') % len(self.hud_entries))
         for hud_entry in self.hud_entries:
-            log(_(u'    - HUD ID     : %u') % hud_entry[0])
-            plugin_index = hud_entry[1]
-            log(_(u'      Owner      : %s (%02X)') % (
-                save_masters[plugin_index], plugin_index))
-            log(_(u'      Flags      : %02X') % hud_entry[2])
-            log(_(u'      Show Mode  : %02X') % hud_entry[3])
-            log(_(u'      X Position : %u') % hud_entry[4])
-            log(_(u'      Y Position : %u') % hud_entry[5])
-            log(_(u'      Depth      : %u') % hud_entry[6])
-            log(_(u'      X Scale    : %u') % hud_entry[7])
-            log(_(u'      Y Scale    : %u') % hud_entry[8])
-            log(_(u'      Alpha      : %02X') % hud_entry[9])
-            log(_(u'      Alignment  : %02X') % hud_entry[10])
-            log(_(u'      Auto-Scale : %02X') % hud_entry[11])
-            log(_(u'      HUD Width  : %u') % hud_entry[12])
-            log(_(u'      HUD Height : %u') % hud_entry[13])
-            log(_(u'      Text Format: %u') % hud_entry[14])
-            log(_(u'      Font Name  : %s') % hud_entry[15])
-            log(_(u'      Text Data  : %s') % hud_entry[16])
-            log(_(u'      Font Height: %u') % hud_entry[17])
-            log(_(u'      Font Width : %u') % hud_entry[18])
-            log(_(u'      Boldness   : %u') % hud_entry[19])
-            log(_(u'      Italic     : %u') % hud_entry[20])
-            log(_(u'      Font Color : (%u, %u, %u)') % (hud_entry[21],
-                                                         hud_entry[22],
-                                                         hud_entry[23]))
+            hud_entry.dump_to_log(log, save_masters)
 
 #------------------------------------------------------------------------------
 # Files
