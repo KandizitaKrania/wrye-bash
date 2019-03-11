@@ -1059,6 +1059,22 @@ class SaveInfo(FileInfo):
         if self.cosave_type is None: return None
         return self.getPath().root + bush.game.se.cosave_ext
 
+    def get_pluggy_cosave(self):
+        if self._pluggy_cosave is None:
+            cosave_path = self.get_pluggy_cosave_path()
+            if cosave_path is None: return None
+            try:
+                self._pluggy_cosave = PluggyCosave(cosave_path)
+            except (OSError, IOError, FileError) as e:
+                if isinstance(e, FileError) or (
+                    isinstance(e, (OSError, IOError)) and e.errno != errno.ENOENT):
+                    deprint(u'Failed to open %s' % cosave_path, traceback=True)
+                return None
+        return self._pluggy_cosave
+
+    def get_pluggy_cosave_path(self):
+        return self.getPath().root + u'.pluggy'
+
 #------------------------------------------------------------------------------
 class DataStore(DataDict):
     store_dir = empty_path # where the datas sit, static except for SaveInfos
