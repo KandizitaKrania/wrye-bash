@@ -528,16 +528,7 @@ class _xSEPluggyChunk(_xSEChunk):
         elif chunkTypeNum == 3:
             pass
         elif chunkTypeNum == 4:
-            #--Pluggy TypeName
-            log(_(u'    Pluggy Name'))
-            refId, = _unpack(ins, '=I', 4)
-            refName = ins.read(len(self.chunk_data) - ins.tell())
-            newName = u''
-            for c in refName:
-                ch = c if (c >= chr(0x20)) and (c < chr(0x80)) else '.'
-                newName = newName + ch
-            log(_(u'      RefID : %08X') % refId)
-            log(_(u'      Name  : %s') % decode(newName))
+            pass
         elif chunkTypeNum == 5:
             #--Pluggy TypeScr
             log(_(u'    Pluggy ScreenSize'))
@@ -843,6 +834,41 @@ class _PluggyArrayBlock(_PluggyBlock):
             elif entry_type == 2:
                 log(u'     %u: %f' % (entry_index, entry_data))
 
+class _PluggyNameBlock(_PluggyBlock):
+    """A name records block of a pluggy cosave. Contains one or more names that
+    were saved. This is an optional block and, if present, it follows directly
+    after the array blocks."""
+    __slots__ = ('stored_names',)
+
+    def __init__(self, ins, record_type):
+        super(_PluggyNameBlock, self).__init__(record_type)
+        name_count = unpack_int(ins)
+        self.stored_names = []
+        for x in xrange(name_count):
+            reference_id = unpack_int(ins)
+            name_len = unpack_int(ins)
+            name_data = ins.read(name_len)
+            self.stored_names.append([reference_id, name_data])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', len(self.stored_names))
+        for stored_name in self.stored_names:
+            _pack(out, '=I', stored_name[0])
+            name_data = stored_name[1]
+            _pack(out, '=I', len(name_data))
+            out.write(name_data)
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   %u stored names:') % len(self.stored_names))
+        for stored_name in self.stored_names:
+            log(_(u'    - RefID : 0x%08X') % stored_name[0])
+            printable_name = u''
+            for c in stored_name[1]:
+                # Strip non-printable characters
+                ch = c if c in string.printable else ''
+                printable_name = printable_name + ch
+            log(_(u'      Name  : %s') % decode(printable_name))
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -1006,6 +1032,8 @@ class PluggyCosave(_ACosave):
             return _PluggyStringBlock
         elif record_type == 2:
             return _PluggyArrayBlock
+        elif record_type == 3:
+            return _PluggyNameBlock
         else:
             raise FileError(self.cosave_path.tail, u'Unknown pluggy record'
                                                    u'block type %u.' %
