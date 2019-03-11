@@ -29,7 +29,7 @@ renaming of the masters of the xSE plugin chunk itself and of the Pluggy chunk.
 import string
 from ..bolt import sio, GPath, decode, encode, unpack_string, unpack_int, \
     unpack_short, unpack_4s, unpack_byte, unpack_str16, struct_pack, \
-    struct_unpack, deprint, unpack_float, unpack_double
+    struct_unpack, deprint, unpack_float, unpack_double, unpack_int_signed
 from ..exception import AbstractError, FileError
 
 
@@ -526,26 +526,7 @@ class _xSEPluggyChunk(_xSEChunk):
         elif chunkTypeNum == 2:
             pass
         elif chunkTypeNum == 3:
-            #--Pluggy TypeArray
-            log(_(u'    Pluggy Array'))
-            arrId, modId, arrFlags, arrSize, = _unpack(ins, '=IBBI', 10)
-            log(_(u'      ArrID : %u') % (arrId,))
-            log(_(u'      ModID : %02X %s') % (
-                modId, espMap[modId] if modId in espMap else u'ERROR',))
-            log(_(u'      Flags : %u') % (arrFlags,))
-            log(_(u'      Size  : %u') % (arrSize,))
-            while ins.tell() < len(self.chunk_data):
-                elemIdx, elemType, = _unpack(ins, '=IB', 5)
-                elemStr = ins.read(4)
-                if elemType == 0:  #--Integer
-                    elem, = struct_unpack('=i', elemStr)
-                    log(u'        [%u]  INT  %d' % (elemIdx, elem,))
-                elif elemType == 1:  #--Ref
-                    elem, = struct_unpack('=I', elemStr)
-                    log(u'        [%u]  REF  %08X' % (elemIdx, elem,))
-                elif elemType == 2:  #--Float
-                    elem, = struct_unpack('=f', elemStr)
-                    log(u'        [%u]  FLT  %08X' % (elemIdx, elem,))
+            pass
         elif chunkTypeNum == 4:
             #--Pluggy TypeName
             log(_(u'    Pluggy Name'))
@@ -783,6 +764,75 @@ class _PluggyStringBlock(_PluggyBlock):
             log(_(u'      Flags : %u') % string_flags)
             log(_(u'      Data  : %s') % string_data)
 
+class _PluggyArrayBlock(_PluggyBlock):
+    """An array records block of a pluggy cosave. Contains an array from a
+    plugin that was saved. This is an optional block and, if present, one or
+    more of these (one for each saved array) follow directly after the string
+    block."""
+    __slots__ = ('array_id', 'plugin_index', 'array_flags', 'max_size',
+                 'array_entries')
+
+    def __init__(self, ins, record_type):
+        super(_PluggyArrayBlock, self).__init__(record_type)
+        self.array_id = unpack_int(ins)
+        self.plugin_index = unpack_byte(ins)
+        self.array_flags = unpack_byte(ins)
+        self.max_size = unpack_int(ins)
+        self.array_entries = []
+        for x in range(unpack_int(ins)):
+            entry_index = unpack_int(ins)
+            entry_type = unpack_byte(ins)
+            if entry_type == 0:
+                entry_data = unpack_int_signed(ins)
+            elif entry_type == 1:
+                entry_data = unpack_int(ins)
+            elif entry_type == 2:
+                entry_data = unpack_float(ins)
+            else:
+                raise RuntimeError(u'Unknown or unsupported entry type %u.' %
+                                   entry_type)
+            self.array_entries.append([entry_index, entry_type, entry_data])
+
+    def write_chunk(self, out):
+        _pack(out, '=I', self.array_id)
+        _pack(out, '=B', self.plugin_index)
+        _pack(out, '=B', self.array_flags)
+        _pack(out, '=I', self.max_size)
+        _pack(out, '=I', len(self.array_entries))
+        for array_entry in self.array_entries:
+            entry_index = array_entry[0]
+            entry_type = array_entry[1]
+            entry_data = array_entry[2]
+            _pack(out, '=I', entry_index)
+            _pack(out, '=B', entry_type)
+            if entry_type == 0:
+                _pack(out, '=i', entry_data)
+            elif entry_type == 1:
+                _pack(out, '=I', entry_data)
+            elif entry_type == 2:
+                _pack(out, '=f', entry_data)
+            else:
+                raise RuntimeError(u'Unknown or unsupported entry type %u.' %
+                                   entry_type)
+
+    def dump_to_log(self, log, save_masters):
+        log(_(u'   Pluggy Array #%u') % self.array_id)
+        log(_(u'    Owner   : %02X (%s)') % (self.plugin_index,
+                                           save_masters[self.plugin_index]))
+        log(_(u'    Flags   : %u') % self.array_flags)
+        log(_(u'    Max Size: %u') % self.max_size)
+        log(_(u'    Cur Size: %u') % len(self.array_entries))
+        log(_(u'    Contents:'))
+        for array_entry in self.array_entries:
+            entry_index, entry_type = array_entry[0], array_entry[1]
+            entry_data = array_entry[2]
+            if entry_type == 0:
+                log(u'     %u: %d' % (entry_index, entry_data))
+            elif entry_type == 1:
+                log(u'     %u: 0x%08X' % (entry_index, entry_data))
+            elif entry_type == 2:
+                log(u'     %u: %f' % (entry_index, entry_data))
+
 #------------------------------------------------------------------------------
 # Files
 class _ACosave(_Dumpable):
@@ -943,6 +993,8 @@ class PluggyCosave(_ACosave):
             return _PluggyPluginBlock
         elif record_type == 1:
             return _PluggyStringBlock
+        elif record_type == 2:
+            return _PluggyArrayBlock
         else:
             raise FileError(self.cosave_path.tail, u'Unknown pluggy record'
                                                    u'block type %u.' %
